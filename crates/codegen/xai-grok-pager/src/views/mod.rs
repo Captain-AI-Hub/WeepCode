@@ -30,6 +30,7 @@ pub mod persona_detail;
 pub mod picker;
 pub mod plan_approval_view;
 pub mod progress_bar;
+pub mod provider_setup;
 pub mod prompt_suggestion;
 pub mod prompt_widget;
 pub mod question_view;

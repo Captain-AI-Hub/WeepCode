@@ -46,12 +46,12 @@ const THEME_CHOICES: &[EnumChoice] = &[
     },
     EnumChoice {
         canonical: "groknight",
-        display: "Grok Night",
+        display: "WeepCode Night",
         description: "Neutral dark with magenta accent.",
     },
     EnumChoice {
         canonical: "grokday",
-        display: "Grok Day",
+        display: "WeepCode Day",
         description: "Light theme for bright environments.",
     },
     EnumChoice {
@@ -476,12 +476,12 @@ const VOICE_STT_LANGUAGE_CHOICES: &[EnumChoice] = &[
 const CONCRETE_THEME_CHOICES: &[EnumChoice] = &[
     EnumChoice {
         canonical: "groknight",
-        display: "Grok Night",
+        display: "WeepCode Night",
         description: "Neutral dark with magenta accent.",
     },
     EnumChoice {
         canonical: "grokday",
-        display: "Grok Day",
+        display: "WeepCode Day",
         description: "Light theme for bright environments.",
     },
     EnumChoice {
@@ -1356,7 +1356,7 @@ pub fn default_settings() -> Vec<SettingMeta> {
             category: SettingCategory::Editor,
             owner: SettingOwner::Shell,
             label: "Voice language",
-            description: "Speech-to-text language for voice dictation (Grok STT). \
+            description: "Speech-to-text language for voice dictation (voice STT). \
                           English by default; System uses your locale when supported. \
                           Sets formatting language for numbers and currencies.",
             keywords: &["voice", "language", "locale", "dictation", "stt", "speech"],

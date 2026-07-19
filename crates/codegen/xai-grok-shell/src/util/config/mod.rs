@@ -7,6 +7,7 @@ mod load;
 mod mcp;
 mod permissions;
 mod persist;
+mod provider_profile;
 mod resolve;
 mod settings_writes;
 mod tips;
@@ -22,6 +23,10 @@ pub use load::*;
 pub use mcp::*;
 pub use permissions::*;
 pub use persist::*;
+pub use provider_profile::{
+    ANTHROPIC_VERSION_HEADER, ProviderApiFormat, ProviderProfileInput, provider_profile_slug,
+    upsert_provider_profile, upsert_provider_profile_at,
+};
 // `remote` extracted to the `xai-grok-config-types` crate (dependency inversion);
 // re-exported so `crate::util::config::{RemoteSettings, GoalRoleModel}` keep working.
 pub use resolve::*;

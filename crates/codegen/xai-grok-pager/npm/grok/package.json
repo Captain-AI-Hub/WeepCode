@@ -1,10 +1,11 @@
 {
-    "name": "@xai-official/grok",
+    "name": "weepcode",
     "version": "0.1.220-alpha.4",
-    "description": "Bring Grok into your terminal",
+    "description": "WeepCode — terminal AI coding assistant with pluggable API providers",
     "license": "Apache-2.0",
+    "private": true,
     "bin": {
-        "grok": "bin/grok"
+        "weepcode": "bin/weepcode"
     },
     "files": [
         "bin/"
@@ -21,21 +22,10 @@
     "scripts": {
         "postinstall": "node bin/postinstall.js"
     },
-    "publishConfig": {
-        "access": "public"
-    },
     "engines": {
         "node": ">=20"
     },
     "dependencies": {
         "@iarna/toml": "^3.0.0"
-    },
-    "optionalDependencies": {
-        "@xai-official/grok-darwin-arm64": "0.1.220-alpha.4",
-        "@xai-official/grok-darwin-x64": "0.1.220-alpha.4",
-        "@xai-official/grok-linux-arm64": "0.1.220-alpha.4",
-        "@xai-official/grok-linux-x64": "0.1.220-alpha.4",
-        "@xai-official/grok-win32-arm64": "0.1.220-alpha.4",
-        "@xai-official/grok-win32-x64": "0.1.220-alpha.4"
     }
 }

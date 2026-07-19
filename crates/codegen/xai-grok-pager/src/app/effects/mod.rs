@@ -1982,6 +1982,49 @@ pub(crate) fn execute(
                     }
                 });
         }
+        Effect::SaveProviderProfile {
+            format,
+            base_url,
+            api_key,
+            model_id,
+            display_name,
+        } => {
+            let tx = acp_tx.clone();
+            tasks.spawn(async move {
+                let params = serde_json::json!({
+                    "format": format,
+                    "base_url": base_url,
+                    "api_key": api_key,
+                    "model_id": model_id,
+                    "display_name": display_name,
+                });
+                let req = acp::ExtRequest::new(
+                    "weepcode/provider/save",
+                    serde_json::value::to_raw_value(&params)
+                        .expect("serialize provider save params")
+                        .into(),
+                );
+                let result = match acp_send(req, &tx).await {
+                    Ok(resp) => {
+                        let v: serde_json::Value =
+                            serde_json::from_str(resp.0.get()).unwrap_or_default();
+                        // The shell wraps success in ExtMethodResult; accept both
+                        // `{result:{...}}` and a bare `{...}` payload.
+                        let inner = v.get("result").unwrap_or(&v);
+                        match inner.get("slug").and_then(|s| s.as_str()) {
+                            Some(slug) => Ok(slug.to_string()),
+                            None => Err(inner
+                                .get("error")
+                                .and_then(|e| e.as_str())
+                                .unwrap_or("provider save returned no slug")
+                                .to_string()),
+                        }
+                    }
+                    Err(e) => Err(e.to_string()),
+                };
+                TaskResult::ProviderProfileSaved { result }
+            });
+        }
         Effect::FetchMcpsList { agent_id, session_id, cache } => {
             let tx = acp_tx.clone();
             tasks

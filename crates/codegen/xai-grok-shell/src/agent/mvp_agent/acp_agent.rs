@@ -282,7 +282,12 @@ impl acp::Agent for MvpAgent {
                 issuer,
             )
         };
-        if has_enterprise_oidc {
+        let preferred_method = self.cfg.borrow().grok_com_config.preferred_method;
+        let pinned_oidc = matches!(
+            preferred_method,
+            Some(crate::auth::PreferredAuthMethod::Oidc)
+        );
+        if has_enterprise_oidc && pinned_oidc {
             let issuer = enterprise_oidc_issuer
                 .as_deref()
                 .expect(
@@ -296,13 +301,14 @@ impl acp::Agent for MvpAgent {
                 None,
                 Some(serde_json::json!({ "issuer" : issuer })),
             );
-        } else {
+        } else if pinned_oidc {
             tracing::info!(
                 label = ? login_label, has_auth_provider,
-                "auth: advertising grok.com auth method",
+                "auth: advertising grok.com auth method (pinned OIDC)",
             );
+        } else {
+            tracing::info!("auth: advertising provider.setup auth method");
         }
-        let preferred_method = self.cfg.borrow().grok_com_config.preferred_method;
         let has_external_api_key = match preferred_method {
             Some(crate::auth::PreferredAuthMethod::Oidc) => false,
             _ => has_external_api_key,
@@ -680,6 +686,25 @@ impl acp::Agent for MvpAgent {
                 });
                 self.maybe_fetch_post_auth_settings().await;
                 Ok(self.auth_response_with_meta())
+            }
+            auth_method::PROVIDER_SETUP_METHOD_ID => {
+                // Defensive: the pager never sends `authenticate(provider.setup)`
+                // — it opens its provider setup form for this method and then
+                // authenticates via `xai.api_key` once a `[model.*]` entry with
+                // credentials exists. Headless and third-party ACP clients can
+                // still send it; fail with a readable pointer instead of
+                // starting a browser flow.
+                emit_login_span(
+                    false,
+                    "provider_setup",
+                    None,
+                    Some("interactive_setup_required"),
+                );
+                Err(acp::Error::auth_required().data(
+                    "No API provider configured. Run `grok` interactively and choose \
+                     \"Configure API Provider\" on the welcome screen, or add a \
+                     [model.<name>] table with base_url/api_key to ~/.grok/config.toml.",
+                ))
             }
             auth_method::GROK_COM_METHOD_ID | auth_method::OIDC_METHOD_ID => {
                 let grok_ctx = self.auth_manager.grok_com_config();
@@ -3207,6 +3232,9 @@ impl acp::Agent for MvpAgent {
                 crate::extensions::session_admin::handle(self, &args).await
             }
             "x.ai/session/repair" => crate::extensions::repair::handle(self, &args).await,
+            s if s.starts_with("weepcode/provider/") => {
+                crate::extensions::provider_setup::handle(self, &args).await
+            }
             "x.ai/memory/flush" | "x.ai/memory/rewrite" => {
                 crate::extensions::memory::handle(self, &args).await
             }

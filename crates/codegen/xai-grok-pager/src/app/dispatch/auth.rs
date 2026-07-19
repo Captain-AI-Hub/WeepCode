@@ -226,6 +226,17 @@ pub(super) fn dispatch_login(app: &mut AppView) -> Vec<Effect> {
         show_welcome(app);
     }
 
+    // WeepCode: in-TUI provider setup replaces the xAI OAuth flow. Opening
+    // the form is pure UI state — no Authenticate RPC fires until the saved
+    // profile exists (see `dispatch_provider_setup_submit`). AuthState stays
+    // `Pending` so the welcome screen renders the form instead of the
+    // post-auth menu.
+    if method_id.0.as_ref() == xai_grok_shell::agent::auth_method::PROVIDER_SETUP_METHOD_ID {
+        app.provider_setup_form = Some(crate::views::provider_setup::ProviderSetupForm::new());
+        app.auth_state = AuthState::Pending { error: None };
+        return vec![];
+    }
+
     abort_prior_auth(app);
 
     let request_seq = app.next_auth_request_seq;
@@ -299,6 +310,70 @@ pub(super) fn dispatch_submit_auth_code(app: &mut AppView, code: String) -> Vec<
     };
 
     vec![Effect::SubmitAuthCode { request_seq, code }]
+}
+
+/// User pressed Enter on a valid provider setup form (WeepCode): persist the
+/// profile via the shell; `handle_provider_profile_saved` chains the
+/// BYOK authenticate once the save lands.
+pub(super) fn dispatch_provider_setup_submit(app: &mut AppView) -> Vec<Effect> {
+    let Some(form) = &app.provider_setup_form else {
+        return vec![];
+    };
+    vec![Effect::SaveProviderProfile {
+        format: form.selected_format().wire.to_string(),
+        base_url: form.base_url.trim().to_string(),
+        api_key: form.api_key.trim().to_string(),
+        model_id: form.model_id.trim().to_string(),
+        display_name: form.display_name.trim().to_string(),
+    }]
+}
+
+/// Esc on the provider setup form: close without saving. Mid-session setups
+/// return to the caller's view, mirroring cancel-login.
+pub(super) fn dispatch_provider_setup_cancel(app: &mut AppView) -> Vec<Effect> {
+    app.provider_setup_form = None;
+    if let Some(return_view) = app.auth_return_view.take() {
+        restore_auth_return_view(app, return_view);
+    }
+    vec![]
+}
+
+/// `weepcode/provider/save` finished. On success the profile exists on disk
+/// and the catalog was hot-reloaded, so authenticate with the BYOK method
+/// (`xai.api_key`); on failure redisplay the error on the form.
+pub(super) fn handle_provider_profile_saved(
+    app: &mut AppView,
+    result: Result<String, String>,
+) -> Vec<Effect> {
+    match result {
+        Ok(_slug) => {
+            app.provider_setup_form = None;
+            let request_seq = app.next_auth_request_seq;
+            app.next_auth_request_seq += 1;
+            app.auth_code_input.clear();
+            app.auth_state = AuthState::Authenticating {
+                request_seq,
+                handle: None,
+                auth_url: None,
+                mode: app.auth_start_mode,
+            };
+            vec![Effect::Authenticate {
+                request_seq,
+                method_id: agent_client_protocol::AuthMethodId::new(
+                    xai_grok_shell::agent::auth_method::XAI_API_KEY_METHOD_ID,
+                ),
+                use_oauth: false,
+                force_interactive: false,
+            }]
+        }
+        Err(error) => {
+            if let Some(form) = &mut app.provider_setup_form {
+                form.submitting = false;
+                form.error = Some(error);
+            }
+            vec![]
+        }
+    }
 }
 
 // TaskResult handlers.

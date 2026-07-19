@@ -2394,12 +2394,12 @@ async fn cached_token_fallthrough_prefers_api_key_for_deployment_key() {
     );
 }
 /// Forced-IdP deployment: even with `XAI_API_KEY` present, the admin kill
-/// switch keeps the fallthrough on interactive `grok.com` (api-key auth is
-/// neither advertised nor an eligible fallthrough).
+/// switch keeps the fallthrough on interactive `provider.setup` (api-key auth
+/// is neither advertised nor an eligible fallthrough).
 #[tokio::test(flavor = "current_thread")]
 #[serial_test::serial]
 async fn cached_token_fallthrough_respects_kill_switch() {
-    use crate::agent::auth_method::{GROK_COM_METHOD_ID, XAI_API_KEY_ENV_VAR};
+    use crate::agent::auth_method::{PROVIDER_SETUP_METHOD_ID, XAI_API_KEY_ENV_VAR};
     use xai_grok_test_support::EnvGuard;
     let _lockdown = EnvGuard::unset("GROK_DISABLE_API_KEY_AUTH");
     let _key = EnvGuard::set(XAI_API_KEY_ENV_VAR, "test-deployment-key");
@@ -2409,18 +2409,19 @@ async fn cached_token_fallthrough_respects_kill_switch() {
             .cached_token_fallthrough_method_id()
             .as_ref()
             .map(|id| id.0.as_ref()),
-        Some(GROK_COM_METHOD_ID),
+        Some(PROVIDER_SETUP_METHOD_ID),
         "disable_api_key_auth must keep the cached_token fallthrough on \
-         interactive grok.com so XAI_API_KEY can't bypass forced IdP login",
+         interactive provider.setup so XAI_API_KEY can't bypass forced login",
     );
 }
 /// No advertiseable credentials at all (no env key, no kill switch): the user
-/// genuinely needs to log in, so the fallthrough is interactive `grok.com`.
+/// genuinely needs to configure a provider, so the fallthrough is interactive
+/// `provider.setup` (WeepCode: in-TUI form, not xAI browser OAuth).
 #[tokio::test(flavor = "current_thread")]
 #[serial_test::serial]
-async fn cached_token_fallthrough_falls_to_grok_com_without_credentials() {
+async fn cached_token_fallthrough_falls_to_provider_setup_without_credentials() {
     use crate::agent::auth_method::{
-        GROK_COM_METHOD_ID, LEGACY_XAI_API_KEY_ENV_VAR, XAI_API_KEY_ENV_VAR,
+        LEGACY_XAI_API_KEY_ENV_VAR, PROVIDER_SETUP_METHOD_ID, XAI_API_KEY_ENV_VAR,
     };
     use xai_grok_test_support::EnvGuard;
     let _lockdown = EnvGuard::unset("GROK_DISABLE_API_KEY_AUTH");
@@ -2432,8 +2433,8 @@ async fn cached_token_fallthrough_falls_to_grok_com_without_credentials() {
             .cached_token_fallthrough_method_id()
             .as_ref()
             .map(|id| id.0.as_ref()),
-        Some(GROK_COM_METHOD_ID),
-        "no API-key creds and no kill switch -> interactive grok.com login",
+        Some(PROVIDER_SETUP_METHOD_ID),
+        "no API-key creds and no kill switch -> interactive provider.setup",
     );
 }
 /// Verifies the 4-state matrix of `(disable_zdr_incompatible_tools, zdr_video_output_s3)`:

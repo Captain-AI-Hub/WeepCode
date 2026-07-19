@@ -39,14 +39,14 @@ Grok discovers plugins from these locations, in priority order:
 | Location | Scope | Trust |
 |----------|-------|-------|
 | `_meta.pluginDirs` (`session/new` / `session/load`) | Session -- loaded for that session only | Trusted automatically |
-| `--plugin-dir` (CLI flag, `grok agent`) | Process -- loaded for that agent process only | Trusted automatically |
+| `--plugin-dir` (CLI flag, `weepcode agent`) | Process -- loaded for that agent process only | Trusted automatically |
 | `.grok/plugins/` | Project -- shared with the team through version control | Requires trust |
 | `~/.grok/plugins/` | User -- personal plugins for every project | Trusted automatically |
 | `[plugins].paths` (config) | Custom directories you add in `config.toml` | Depends on location |
 
 Grok also reads the `.claude/plugins/` equivalents for compatibility. When two plugins share a name, the higher-priority location wins.
 
-The Agent SDKs load per-session plugins through `GrokOptions.plugins`, which arrives as `_meta.pluginDirs` on `session/new` and `session/load`; because the caller controls the directory, these plugins are always trusted -- their hooks and MCP servers activate without a prompt, and they never persist beyond the session. The `--plugin-dir` flag is the process-wide equivalent for direct CLI use (repeatable: `grok agent --no-leader --plugin-dir A --plugin-dir B stdio`); it applies to dedicated agent processes only and is ignored in leader mode (the shared leader discovers its own plugins).
+The Agent SDKs load per-session plugins through `GrokOptions.plugins`, which arrives as `_meta.pluginDirs` on `session/new` and `session/load`; because the caller controls the directory, these plugins are always trusted -- their hooks and MCP servers activate without a prompt, and they never persist beyond the session. The `--plugin-dir` flag is the process-wide equivalent for direct CLI use (repeatable: `weepcode agent --no-leader --plugin-dir A --plugin-dir B stdio`); it applies to dedicated agent processes only and is ignored in leader mode (the shared leader discovers its own plugins).
 
 ---
 
@@ -126,7 +126,7 @@ grok plugin validate [<path>]             # Validate plugin.json (default: curre
 grok plugin tag [<path>] [--push] [--force] [--dry-run]   # Tag a release from the manifest version
 ```
 
-Run `grok plugin install <source>` without `--trust` and Grok prints the source and warns that installing will activate the plugin's hooks, MCP servers, and skills, then stops without installing. Add `--trust` to install it.
+Run `weepcode plugin install <source>` without `--trust` and Grok prints the source and warns that installing will activate the plugin's hooks, MCP servers, and skills, then stops without installing. Add `--trust` to install it.
 
 The `<source>` argument accepts:
 
@@ -184,7 +184,7 @@ grok plugin update
 
 ## Slash commands
 
-In an interactive session, these commands open the modal on a specific tab. They take no arguments — manage plugins from the modal or with the `grok plugin` CLI.
+In an interactive session, these commands open the modal on a specific tab. They take no arguments — manage plugins from the modal or with the `weepcode plugin` CLI.
 
 | Command | Opens |
 |---------|-------|
@@ -207,7 +207,7 @@ disabled = ["user/a1b2c3d4/noisy-plugin"]    # Plugin IDs or names to skip
 enabled = ["project/9f8e7d6c/team-tools"]    # Plugin IDs or names to force on
 ```
 
-List a plugin in `disabled` to discover it but skip loading its components. List a plugin in `enabled` to activate it — plugins are disabled by default unless a CLI override or an explicit config path enables them, so add them here to turn them on. Each entry is either a plain plugin name (as shown by `grok plugin list`) or a full plugin ID in the form `<scope>/<hash>/<name>`.
+List a plugin in `disabled` to discover it but skip loading its components. List a plugin in `enabled` to activate it — plugins are disabled by default unless a CLI override or an explicit config path enables them, so add them here to turn them on. Each entry is either a plain plugin name (as shown by `weepcode plugin list`) or a full plugin ID in the form `<scope>/<hash>/<name>`.
 
 ### Hide the plugins UI
 
@@ -269,7 +269,7 @@ grok plugin install <source> --trust
 
 ## Inspect plugins
 
-Run `grok inspect` to see every discovered plugin and what it provides:
+Run `weepcode inspect` to see every discovered plugin and what it provides:
 
 ```bash
 grok inspect          # Show plugins with their skills, agents, hooks, and MCP servers

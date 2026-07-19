@@ -1,6 +1,6 @@
 # Getting Started
 
-Grok Build is a terminal-based AI coding assistant from SpaceXAI. It runs as a TUI (Terminal User Interface) that understands your codebase, executes shell commands, edits files, searches the web, and manages tasks.
+WeepCode is a terminal-based AI coding assistant from SpaceXAI. It runs as a TUI (Terminal User Interface) that understands your codebase, executes shell commands, edits files, searches the web, and manages tasks.
 
 You can use it interactively as a full-screen TUI, run it headlessly for scripting and CI/CD, or integrate it into editors via the Agent Client Protocol (ACP).
 
@@ -102,7 +102,7 @@ The `@` operator opens a fuzzy file picker. By default it respects `.gitignore` 
 By default, Grok asks for permission before executing shell commands or editing files. You can approve individually or toggle always-approve mode:
 
 - Press `Ctrl+O` to toggle always-approve mode
-- Use the `--yolo` flag at launch: `grok --yolo`
+- Use the `--yolo` flag at launch: `weepcode --yolo`
 - Type `/always-approve` in the prompt to toggle the mode
 
 ---
@@ -115,7 +115,7 @@ Every conversation is a **session**. Sessions are automatically saved to `~/.gro
 
 - Start a new session: `Ctrl+N` or `/new`
 - Resume a previous session: `/resume` in the TUI, or `--resume <ID>` from the CLI
-- Continue the most recent session: `grok -c`
+- Continue the most recent session: `weepcode -c`
 
 ### Scrollback
 
@@ -168,7 +168,7 @@ See [Slash Commands](04-slash-commands.md) for the complete reference.
 grok "fix the failing auth test and run it"
 
 # Initial prompt in a new git worktree. Use --worktree=<name> (with `=`) so the
-# prompt isn't swallowed as the worktree name — `grok -w "refactor module X"`
+# prompt isn't swallowed as the worktree name — `weepcode -w "refactor module X"`
 # would treat "refactor module X" as the worktree label, not the prompt.
 grok --worktree=feat "refactor module X"
 
@@ -194,7 +194,7 @@ grok --resume <session-id>
 # Continue the most recent session
 grok -c
 
-# Experimental scrollback-native render mode. Sticky: plain `grok` reopens in
+# Experimental scrollback-native render mode. Sticky: plain `weepcode` reopens in
 # the mode last chosen via --minimal/--fullscreen (or /minimal//fullscreen).
 grok --minimal
 

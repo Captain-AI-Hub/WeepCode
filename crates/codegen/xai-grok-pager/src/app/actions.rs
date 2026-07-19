@@ -612,6 +612,13 @@ pub enum Action {
     CancelLogin,
     /// User submitted a manually-pasted auth token (loopback mode).
     SubmitAuthCode(String),
+    /// User pressed Enter on a valid provider setup form (WeepCode): persist
+    /// the profile via `weepcode/provider/save`, then authenticate with the
+    /// new BYOK credentials.
+    ProviderSetupSubmit,
+    /// Esc on the provider setup form: close it and return to the welcome
+    /// menu without saving.
+    ProviderSetupCancel,
     /// Copy the auth URL to the clipboard during authentication.
     CopyAuthUrl,
     /// Show the raw auth URL with mouse capture disabled for manual copy.
@@ -1665,6 +1672,15 @@ pub enum Effect {
     PollAuthUrl { request_seq: u64 },
     /// Submit a manually-pasted auth code (ext request).
     SubmitAuthCode { request_seq: u64, code: String },
+    /// Persist a provider profile from the setup form
+    /// (`weepcode/provider/save` ext request; WeepCode).
+    SaveProviderProfile {
+        format: String,
+        base_url: String,
+        api_key: String,
+        model_id: String,
+        display_name: String,
+    },
     /// Fetch MCP server list from the shell (x.ai/mcp/list).
     FetchMcpsList {
         agent_id: AgentId,
@@ -2332,6 +2348,12 @@ pub enum TaskResult {
     /// Auth code was submitted (fire-and-forget).
     AuthCodeSubmitted {
         request_seq: u64,
+    },
+    /// Provider profile save finished (WeepCode). `Ok` carries the persisted
+    /// `[model.*]` slug; `Err` carries the user-facing error to redisplay on
+    /// the form.
+    ProviderProfileSaved {
+        result: Result<String, String>,
     },
     /// MCP server list fetched from shell.
     McpsListLoaded {

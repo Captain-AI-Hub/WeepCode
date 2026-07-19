@@ -65,9 +65,18 @@ impl MvpAgent {
                 cfg
             }
             None => {
-                let mut fallback = primary.clone();
-                fallback.model = slug;
-                fallback
+                // The aux slug (default: the bundled xAI model) did not
+                // resolve to usable credentials — e.g. a BYOK-only setup
+                // where the bundled xAI entry has no key. Falling back to
+                // the primary config but keeping the aux *slug* as the model
+                // id would send a model the third-party endpoint doesn't
+                // have (404). Keep the primary model id instead.
+                tracing::warn!(
+                    aux_model = %slug,
+                    primary_model = %primary.model,
+                    "aux model unresolved; summary request will use the session model"
+                );
+                primary.clone()
             }
         };
         let model = config.model.clone();
@@ -710,8 +719,9 @@ impl MvpAgent {
         }
     }
     /// When `cached_token` cannot proceed, prefer non-interactive `xai.api_key`
-    /// iff `should_advertise_xai_api_key`; otherwise `grok.com`. Returns `None`
-    /// when `preferred_method` is pinned (fail-closed — no cross-method fallthrough).
+    /// iff `should_advertise_xai_api_key`; otherwise `provider.setup` (WeepCode:
+    /// in-TUI provider form). Returns `None` when `preferred_method` is pinned
+    /// (fail-closed — no cross-method fallthrough).
     pub(super) fn cached_token_fallthrough_method_id(
         &self,
     ) -> Option<acp::AuthMethodId> {
@@ -726,7 +736,9 @@ impl MvpAgent {
         Some(acp::AuthMethodId::new(id))
     }
     /// Shared exit for missing/expired/legacy `cached_token`: fall through with
-    /// `use_oauth` only when the target is interactive `grok.com`. When
+    /// `use_oauth` only when the target is interactive `grok.com` (pinned OIDC
+    /// legacy; the unpinned fallthrough targets `xai.api_key` or
+    /// `provider.setup`, neither of which wants `use_oauth`). When
     /// `preferred_method` is pinned, fail instead of falling through.
     pub(super) async fn authenticate_after_cached_token_unavailable(
         &self,

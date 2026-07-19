@@ -1,13 +1,15 @@
-//! `/usage` -- show credit usage or open billing management page.
+//! `/usage` -- show credit usage.
 
 use crate::app::actions::Action;
 use crate::slash::command::{AppCtx, ArgItem, CommandExecCtx, CommandResult, SlashCommand};
 
-/// Show coding credit usage or manage billing.
+/// Show coding credit usage.
 ///
 /// `/usage`        -- show current credit usage
 /// `/usage show`   -- same as above
-/// `/usage manage` -- open billing management page in browser
+///
+/// WeepCode: there is no billing management page to link to; the command is
+/// hidden entirely for API-key providers (see `set_usage_visible`).
 pub struct UsageCommand;
 
 impl SlashCommand for UsageCommand {
@@ -39,31 +41,20 @@ impl SlashCommand for UsageCommand {
     }
 
     fn suggest_args(&self, _ctx: &AppCtx, _args_query: &str) -> Option<Vec<ArgItem>> {
-        Some(vec![
-            ArgItem {
-                display: "show".to_string(),
-                match_text: "show".to_string(),
-                insert_text: "show".to_string(),
-                description: "View credit usage".to_string(),
-            },
-            ArgItem {
-                display: "manage".to_string(),
-                match_text: "manage".to_string(),
-                insert_text: "manage".to_string(),
-                description: "Open billing management page".to_string(),
-            },
-        ])
+        Some(vec![ArgItem {
+            display: "show".to_string(),
+            match_text: "show".to_string(),
+            insert_text: "show".to_string(),
+            description: "View credit usage".to_string(),
+        }])
     }
 
     fn run(&self, _ctx: &mut CommandExecCtx, args: &str) -> CommandResult {
         let arg = args.trim();
         match arg {
             "" | "show" => CommandResult::Action(Action::ShowUsage),
-            "manage" => {
-                CommandResult::Action(Action::OpenUrl("https://grok.com/?_s=usage".to_string()))
-            }
             _ => CommandResult::Error(format!(
-                "Unknown argument: {arg}. Use /usage show or /usage manage"
+                "Unknown argument: {arg}. Use /usage show"
             )),
         }
     }

@@ -4683,7 +4683,7 @@ pub fn inject_url_derived_headers(
     alpha_test_key: Option<&str>,
     base_url: &str,
 ) {
-    if crate::util::is_cli_chat_proxy_url(base_url) {
+    if is_first_party_proxy_url(base_url) {
         headers
             .entry("X-XAI-Token-Auth".to_string())
             .or_insert_with(|| "xai-grok-cli".to_string());
@@ -4695,6 +4695,23 @@ pub fn inject_url_derived_headers(
             .or_insert_with(|| crate::http::process_client_mode().to_string());
     }
     let _ = (alpha_test_key, base_url);
+}
+
+/// True only for the real first-party cli-chat-proxy host.
+///
+/// `is_cli_chat_proxy_url` also accepts loopback hosts (xAI local dev and
+/// their mock-server tests), but WeepCode must never stamp xAI-only auth
+/// headers onto a *local third-party* endpoint (a user's mock, litellm,
+/// ollama on 127.0.0.1). Loopback is therefore excluded here.
+fn is_first_party_proxy_url(base_url: &str) -> bool {
+    if !crate::util::is_cli_chat_proxy_url(base_url) {
+        return false;
+    }
+    let is_loopback = reqwest::Url::parse(base_url)
+        .ok()
+        .and_then(|u| u.host_str().map(str::to_owned))
+        .is_some_and(|h| h == "localhost" || h == "127.0.0.1" || h == "::1");
+    !is_loopback
 }
 pub fn resolve_model_to_sampling_config(
     model_id: &str,
@@ -5092,6 +5109,28 @@ reasoning_effort = "low"
         inject_url_derived_headers(&mut headers, None, "https://api.x.ai/v1");
         assert!(headers.get("X-XAI-Token-Auth").is_none());
         assert!(headers.get("x-authenticateresponse").is_none());
+    }
+    /// WeepCode: a third-party endpoint on loopback (mock, litellm, ollama)
+    /// must never receive xAI-only auth headers even though
+    /// `is_cli_chat_proxy_url` trusts loopback for xAI local dev.
+    #[test]
+    fn inject_url_derived_headers_skips_proxy_headers_for_loopback_url() {
+        for url in [
+            "http://127.0.0.1:18321/v1",
+            "http://localhost:8080/v1",
+            "http://[::1]:11434/v1",
+        ] {
+            let mut headers = IndexMap::new();
+            inject_url_derived_headers(&mut headers, None, url);
+            assert!(
+                headers.get("X-XAI-Token-Auth").is_none(),
+                "{url}: X-XAI-Token-Auth must not leak to loopback third-party endpoints"
+            );
+            assert!(
+                headers.get("x-authenticateresponse").is_none(),
+                "{url}: x-authenticateresponse must not leak to loopback third-party endpoints"
+            );
+        }
     }
     #[test]
     fn inject_url_derived_headers_preserves_caller_extra_headers() {

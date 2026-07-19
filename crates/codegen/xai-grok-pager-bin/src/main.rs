@@ -1741,7 +1741,7 @@ async fn async_main() -> Result<()> {
                     println!("{}", serde_json::to_string(&payload)?);
                 } else {
                     println!(
-                        "grok {}",
+                        "weepcode {}",
                         xai_grok_version::display_version_with_commit(
                             env!("VERSION_WITH_COMMIT"),
                             xai_grok_update::channel_label(),
@@ -1879,18 +1879,36 @@ async fn async_main() -> Result<()> {
             }
             Command::Login {
                 legacy: _,
-                oauth,
-                device_auth,
-                devbox,
+                oauth: _,
+                device_auth: _,
+                devbox: _,
             } => {
                 init_tracing_simple("cli");
-                let _otel_guard = xai_grok_telemetry::otel_layer::otel_guard();
-                let config = xai_grok_shell::config::load_effective_config_disk_only()
-                    .map_err(|e| anyhow::anyhow!("Failed to load config: {e}"))?;
-                let config = AgentConfig::new_from_toml_cfg(&config)
-                    .map_err(|e| anyhow::anyhow!("Failed to create agent config: {e}"))?;
-                xai_grok_shell::auth::run_cli_login(&config, oauth, device_auth, devbox).await?;
-                println!();
+                // WeepCode: xAI OAuth login is gone. `login` prints the
+                // provider-setup path instead of starting a browser flow.
+                println!(
+                    "WeepCode uses API providers instead of xAI sign-in.\n\
+                     \n\
+                     Option 1 — interactive setup:\n\
+                     \x20 Run `grok` and complete \"Configure API Provider\" on the welcome screen.\n\
+                     \n\
+                     Option 2 — edit ~/.grok/config.toml directly:\n\
+                     \n\
+                     \x20 [model.my-provider]\n\
+                     \x20 model          = \"<model id>\"        # e.g. gpt-5, claude-sonnet-4-5\n\
+                     \x20 name           = \"<display name>\"\n\
+                     \x20 base_url       = \"https://api.openai.com/v1\"\n\
+                     \x20 api_key        = \"<your key>\"\n\
+                     \x20 api_backend    = \"responses\"          # responses | chat_completions | messages\n\
+                     \n\
+                     \x20 [models]\n\
+                     \x20 default = \"my-provider\"\n\
+                     \n\
+                     For Anthropic use api_backend = \"messages\" plus:\n\
+                     \x20 auth_scheme = \"x_api_key\"\n\
+                     \n\
+                     Or export XAI_API_KEY for a quick single-provider setup."
+                );
                 xai_grok_shell::instrumentation::finalize_and_exit(0);
             }
             Command::Logout => {
@@ -2099,14 +2117,11 @@ fn build_update_config() -> UpdateConfig {
 /// Central gate for auto-update checks; add new suppression rules here,
 /// not at call sites.
 fn should_check_for_updates(no_auto_update_flag: bool) -> bool {
-    if cfg!(debug_assertions) {
-        return false;
-    }
-    if no_auto_update_flag {
-        return false;
-    }
-    !std::env::var_os("GROK_DISABLE_AUTOUPDATER")
-        .is_some_and(|v| env_flag_enabled(&v.to_string_lossy()))
+    // WeepCode: the self-update channel serves xAI `grok` binaries; there is
+    // no WeepCode update service to point it at, so the background updater is
+    // disabled outright. Re-enable only with a real WeepCode update channel.
+    let _ = no_auto_update_flag;
+    false
 }
 /// Gate for the stdio agent's background auto-update: only the direct stdio
 /// agent, from the managed install. Other modes update in `run_agent_command`.

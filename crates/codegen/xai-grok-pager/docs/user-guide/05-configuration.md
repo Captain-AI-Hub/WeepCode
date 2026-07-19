@@ -167,7 +167,7 @@ navigation, while `simple_mode` controls editing in the prompt.
 #### Screen Mode
 
 The `screen_mode` setting under `[ui]` is the **default render mode** for plain
-`grok` launches. Configure it from `/settings` → **Default screen mode**
+`weepcode` launches. Configure it from `/settings` → **Default screen mode**
 (restart required), or edit `config.toml` by hand. Both choices write
 `config.toml`. CLI flags (`--minimal` / `--fullscreen`) and slash commands
 (`/minimal` / `/fullscreen`) are session-scoped and do **not** write this key —
@@ -394,7 +394,7 @@ Each cell can be toggled via environment variable or `config.toml`. See the
 environment-variables reference for the env var names. Resolution order:
 env var > config.toml > default (on).
 
-`grok inspect` reports cells that still need session-start resolution as
+`weepcode inspect` reports cells that still need session-start resolution as
 `?` until a value is available; cells with an explicit env or TOML value
 use that value. Affected discovery entries report
 `compatibilityStatus: "unresolved"` in JSON and `[compat unresolved]` in
@@ -459,7 +459,7 @@ items = ["action-required", "spinner", "activity", "session-name", "grok"]
 | `sleep_prevention` | bool | `true` | Keep the display awake while the agent is working (macOS/Linux). |
 | `progress_bar` | bool | `true` | Show a progress indicator in the terminal tab (OSC 9;4). |
 | `title.enabled` | bool | `true` | Set the terminal title to reflect agent state. |
-| `title.items` | array | (see above) | Items shown in the title bar. Options: `action-required`, `spinner`, `activity`, `session-name`, `cwd`, `model`, `turn-timer`, `grok`. |
+| `title.items` | array | (see above) | Items shown in the title bar. Options: `action-required`, `spinner`, `activity`, `session-name`, `cwd`, `model`, `turn-timer`, `weepcode`. |
 
 #### Terminal Support Matrix
 
@@ -590,7 +590,7 @@ default = "company-grok"
 [model.company-grok]
 model = "grok-build"
 base_url = "https://grok-proxy.acme.com/"
-name = "Grok Build Latest (Proxy)"
+name = "WeepCode Latest (Proxy)"
 context_window = 128000
 
 [features]

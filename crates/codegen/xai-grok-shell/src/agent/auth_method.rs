@@ -84,15 +84,18 @@ pub struct AuthMethodsBuildInputs<'a> {
     /// True if a cached session token is available (either present at startup
     /// or recovered via silent refresh).
     pub has_cached_token: bool,
-    /// True if enterprise OIDC is configured. Mutually exclusive with the
-    /// default `grok.com` method.
+    /// True if enterprise OIDC is configured. Only consulted on the pinned
+    /// `preferred_method = "oidc"` path; the unpinned path never advertises
+    /// xAI browser login (it appends `provider.setup` instead).
     pub has_enterprise_oidc: bool,
     /// Required when `has_enterprise_oidc` is true; ignored otherwise.
     pub enterprise_oidc_issuer: Option<&'a str>,
-    /// Optional display label for the login method (`grok.com` or `oidc`).
+    /// Optional display label for the login method (`grok.com` or `oidc`;
+    /// pinned OIDC path only).
     pub login_label: Option<&'a str>,
     /// True if `grok_com_config.auth_provider_command` is configured (sets
-    /// `meta.external_provider = true` on the `grok.com` method).
+    /// `meta.external_provider = true` on the `grok.com` method; pinned OIDC
+    /// path only).
     pub has_auth_provider_command: bool,
     /// Config pin (`[auth] preferred_method`). `None` keeps multi-method
     /// fallthrough; `Some` is fail-closed (only that method family).
@@ -123,9 +126,13 @@ pub struct BuiltAuthMethods {
 /// Unpinned ordering (when each method is enabled):
 /// 1. `xai.api_key`     (if `has_external_api_key`)
 /// 2. `cached_token`    (if `has_cached_token`)
-/// 3. exactly one of:
-///    - `oidc`          (if `has_enterprise_oidc`)
-///    - `grok.com`      (otherwise)
+/// 3. `provider.setup`  (always)
+///
+/// WeepCode: the xAI browser-OAuth methods (`grok.com` / `oidc`) are no longer
+/// advertised on the unpinned path. A user with no credentials is offered
+/// in-TUI API-provider setup instead of an xAI login wall. Enterprise OIDC
+/// stays reachable through the pinned `[auth] preferred_method = "oidc"` path
+/// (see [`build_pinned_oidc`]).
 ///
 /// Unpinned `default_auth_method_id`:
 /// - `cached_token` if `has_cached_token`
@@ -156,14 +163,7 @@ pub fn build_auth_methods(inputs: AuthMethodsBuildInputs<'_>) -> BuiltAuthMethod
             login_label,
             has_auth_provider_command,
         ),
-        None => build_unpinned(
-            has_external_api_key,
-            has_cached_token,
-            has_enterprise_oidc,
-            enterprise_oidc_issuer,
-            login_label,
-            has_auth_provider_command,
-        ),
+        None => build_unpinned(has_external_api_key, has_cached_token),
     }
 }
 
@@ -214,14 +214,7 @@ fn build_pinned_oidc(
     }
 }
 
-fn build_unpinned(
-    has_external_api_key: bool,
-    has_cached_token: bool,
-    has_enterprise_oidc: bool,
-    enterprise_oidc_issuer: Option<&str>,
-    login_label: Option<&str>,
-    has_auth_provider_command: bool,
-) -> BuiltAuthMethods {
+fn build_unpinned(has_external_api_key: bool, has_cached_token: bool) -> BuiltAuthMethods {
     let mut methods: Vec<acp::AuthMethod> = Vec::new();
     let mut default_auth_method_id: Option<acp::AuthMethodId> = None;
 
@@ -248,13 +241,10 @@ fn build_unpinned(
         }
     }
 
-    push_interactive_login(
-        &mut methods,
-        has_enterprise_oidc,
-        enterprise_oidc_issuer,
-        login_label,
-        has_auth_provider_command,
-    );
+    // Always advertise in-TUI API-provider setup last: with no credentials it
+    // is the only entry (the pager opens the provider form); with credentials
+    // it stays reachable for adding another provider.
+    methods.push(provider_setup_auth_method());
 
     BuiltAuthMethods {
         methods,
@@ -262,6 +252,9 @@ fn build_unpinned(
     }
 }
 
+/// Push the interactive login method used by the **pinned OIDC** path
+/// (`[auth] preferred_method = "oidc"`). The unpinned path no longer
+/// advertises xAI browser login; it appends `provider.setup` instead.
 fn push_interactive_login(
     methods: &mut Vec<acp::AuthMethod>,
     has_enterprise_oidc: bool,
@@ -291,6 +284,9 @@ pub enum AuthMethodKind {
     CachedToken,
     GrokCom,
     Oidc,
+    /// In-TUI API-provider setup (WeepCode). Interactive (the pager renders a
+    /// form) but not session-based: no auth.json, no token refresh.
+    ProviderSetup,
     Unknown,
 }
 
@@ -301,6 +297,7 @@ impl AuthMethodKind {
             CACHED_TOKEN_AUTH_METHOD_ID => Self::CachedToken,
             GROK_COM_METHOD_ID => Self::GrokCom,
             OIDC_METHOD_ID => Self::Oidc,
+            PROVIDER_SETUP_METHOD_ID => Self::ProviderSetup,
             _ => Self::Unknown,
         }
     }
@@ -315,9 +312,10 @@ impl AuthMethodKind {
         matches!(self, Self::CachedToken | Self::GrokCom | Self::Oidc)
     }
 
-    /// Requires user interaction (browser, OIDC redirect, or external auth command).
+    /// Requires user interaction (browser, OIDC redirect, external auth
+    /// command, or the in-TUI provider setup form).
     pub fn needs_interactive_login(self) -> bool {
-        matches!(self, Self::GrokCom | Self::Oidc)
+        matches!(self, Self::GrokCom | Self::Oidc | Self::ProviderSetup)
     }
 
     pub fn auth_error_message(self) -> &'static str {
@@ -396,7 +394,8 @@ pub const AUTH_ERROR_API_KEY: &str = "Authentication failed. Run `grok login`, s
 /// legacy WebLogin), or `None` when fallthrough is forbidden.
 ///
 /// Unpinned: prefer non-interactive `xai.api_key` when advertiseable, else
-/// interactive `grok.com`.
+/// interactive `provider.setup` (WeepCode: in-TUI provider form, not xAI
+/// browser OAuth).
 ///
 /// Pinned `oidc`: **no** fallthrough to api_key — return `None` so the caller
 /// fails auth. Pinned `api_key` should not reach this path (cached_token is
@@ -410,7 +409,7 @@ pub fn method_id_after_cached_token_unavailable(
         None => Some(if has_external_api_key {
             XAI_API_KEY_METHOD_ID
         } else {
-            GROK_COM_METHOD_ID
+            PROVIDER_SETUP_METHOD_ID
         }),
     }
 }
@@ -468,6 +467,22 @@ pub fn grok_com_auth_method(
     )
 }
 
+/// In-TUI API-provider setup (WeepCode). Always advertised last on the
+/// unpinned path; the pager opens its provider configuration form for this
+/// method instead of a browser OAuth flow.
+pub const PROVIDER_SETUP_METHOD_ID: &str = "provider.setup";
+pub fn provider_setup_auth_method() -> acp::AuthMethod {
+    acp::AuthMethod::Agent(
+        acp::AuthMethodAgent::new(
+            acp::AuthMethodId::new(PROVIDER_SETUP_METHOD_ID),
+            "API Provider".to_string(),
+        )
+        .description(Some(
+            "Configure OpenAI / Anthropic compatible API".to_string(),
+        )),
+    )
+}
+
 pub const OIDC_METHOD_ID: &str = "oidc";
 pub fn oidc_auth_method(issuer: &str, label: Option<&str>) -> acp::AuthMethod {
     let name = label
@@ -500,12 +515,13 @@ mod tests {
         );
     }
 
-    /// No advertiseable API-key credentials → interactive `grok.com`.
+    /// No advertiseable API-key credentials → interactive `provider.setup`
+    /// (WeepCode: in-TUI provider form, not xAI browser OAuth).
     #[test]
-    fn after_cached_token_unavailable_falls_to_grok_com_without_api_key() {
+    fn after_cached_token_unavailable_falls_to_provider_setup_without_api_key() {
         assert_eq!(
             method_id_after_cached_token_unavailable(false, None),
-            Some(GROK_COM_METHOD_ID),
+            Some(PROVIDER_SETUP_METHOD_ID),
         );
     }
 
@@ -550,6 +566,17 @@ mod tests {
         assert!(!is_session_based_method(&acp::AuthMethodId::new(
             "unknown-method"
         )));
+
+        // provider.setup: interactive (pager form) but NOT session-based —
+        // no auth.json, no refresh. It must classify like api-key family for
+        // session-token refresh gating while still driving the login UI.
+        let setup_id = acp::AuthMethodId::new(PROVIDER_SETUP_METHOD_ID);
+        let setup_kind = AuthMethodKind::from_id(&setup_id);
+        assert_eq!(setup_kind, AuthMethodKind::ProviderSetup);
+        assert!(setup_kind.needs_interactive_login());
+        assert!(!setup_kind.is_session_based());
+        assert!(!setup_kind.is_api_key());
+        assert!(!is_session_based_method(&setup_id));
     }
 
     use xai_grok_test_support::EnvGuard;
@@ -657,8 +684,8 @@ mod tests {
     }
 
     /// Session-only user (no API key anywhere): cached_token first, then
-    /// `grok.com` — `auth_methods.first()` does NOT need interactive login,
-    /// so this user also skips the login screen at startup.
+    /// `provider.setup` — `auth_methods.first()` does NOT need interactive
+    /// login, so this user also skips the setup form at startup.
     #[test]
     fn session_only_user_first_method_is_cached_token() {
         let inputs = AuthMethodsBuildInputs {
@@ -679,25 +706,35 @@ mod tests {
                 .map(|id| id.0.as_ref()),
             Some(CACHED_TOKEN_AUTH_METHOD_ID),
         );
+        assert_eq!(
+            built.methods.last().map(|m| m.id().0.as_ref()),
+            Some(PROVIDER_SETUP_METHOD_ID),
+            "provider.setup is always advertised last on the unpinned path",
+        );
     }
 
-    /// Brand-new user (no API key, no cached token): only `grok.com` is
-    /// advertised, and the pager will (correctly) show the login screen.
-    /// `default_auth_method_id` is None so the pager falls back to the
-    /// advertised login method.
+    /// Brand-new user (no API key, no cached token): only `provider.setup` is
+    /// advertised, and the pager will (correctly) open the provider setup
+    /// form. `default_auth_method_id` is None so the pager falls back to the
+    /// advertised setup method.
     #[test]
-    fn fresh_user_only_advertises_grok_com_and_requires_login() {
+    fn fresh_user_only_advertises_provider_setup_and_requires_setup() {
         let built = build_auth_methods(default_inputs());
 
-        assert_eq!(first_kind(&built.methods), Some(AuthMethodKind::GrokCom));
+        assert_eq!(
+            first_kind(&built.methods),
+            Some(AuthMethodKind::ProviderSetup)
+        );
         assert!(built.default_auth_method_id.is_none());
         assert_eq!(built.methods.len(), 1);
     }
 
-    /// Enterprise OIDC replaces `grok.com` (mutually exclusive). xai.api_key,
-    /// when present, still leads.
+    /// Unpinned path no longer advertises xAI browser login: with enterprise
+    /// OIDC configured but unpinned, neither `oidc` nor `grok.com` appears;
+    /// `provider.setup` is the interactive fallback. Enterprise OIDC stays
+    /// reachable via the pinned `preferred_method = "oidc"` path.
     #[test]
-    fn enterprise_oidc_replaces_grok_com_but_xai_api_key_still_first() {
+    fn unpinned_enterprise_oidc_not_advertised_provider_setup_appended() {
         let inputs = AuthMethodsBuildInputs {
             has_external_api_key: true,
             has_cached_token: false,
@@ -709,29 +746,35 @@ mod tests {
 
         assert_eq!(first_kind(&built.methods), Some(AuthMethodKind::XaiApiKey));
         assert!(
-            built
+            !built
                 .methods
                 .iter()
                 .any(|m| AuthMethodKind::from_id(m.id()) == AuthMethodKind::Oidc),
-            "oidc must be advertised when has_enterprise_oidc",
+            "oidc must NOT be advertised on the unpinned path",
         );
         assert!(
             !built
                 .methods
                 .iter()
                 .any(|m| AuthMethodKind::from_id(m.id()) == AuthMethodKind::GrokCom),
-            "grok.com and oidc are mutually exclusive",
+            "grok.com must NOT be advertised on the unpinned path",
+        );
+        assert_eq!(
+            built.methods.last().map(|m| m.id().0.as_ref()),
+            Some(PROVIDER_SETUP_METHOD_ID),
         );
     }
 
     /// `has_auth_provider_command` is plumbed through to the `grok.com` method
-    /// as `meta.external_provider = true`. Pinning this here so the pager's
-    /// `AuthStartMode::Command` path keeps working.
+    /// as `meta.external_provider = true` on the pinned OIDC path (the only
+    /// path that still advertises xAI browser login). Pinning this here so the
+    /// pager's `AuthStartMode::Command` path keeps working.
     #[test]
     fn auth_provider_command_sets_external_provider_meta() {
         let inputs = AuthMethodsBuildInputs {
             has_auth_provider_command: true,
             login_label: Some("Acme Corp"),
+            preferred_method: Some(PreferredAuthMethod::Oidc),
             ..default_inputs()
         };
         let built = build_auth_methods(inputs);
@@ -740,7 +783,7 @@ mod tests {
             .methods
             .iter()
             .find(|m| AuthMethodKind::from_id(m.id()) == AuthMethodKind::GrokCom)
-            .expect("grok.com must be advertised");
+            .expect("grok.com must be advertised on the pinned OIDC path");
         assert_eq!(grok.name(), "Acme Corp");
         let meta = grok.meta().expect("meta should be set");
         assert_eq!(
@@ -792,7 +835,7 @@ mod tests {
 
         // Without the env var present, has_own_credentials() returns false,
         // the predicate returns false, and the builder advertises only the
-        // login method. Confirms the predicate isn't trivially true.
+        // provider.setup method. Confirms the predicate isn't trivially true.
         {
             let _unset = EnvGuard::unset(TEST_ENV_VAR);
             let has_external_api_key = should_advertise_xai_api_key(false, models.values());
@@ -817,8 +860,8 @@ mod tests {
             assert!(has_external_api_key);
             let built = build_auth_methods(AuthMethodsBuildInputs {
                 has_external_api_key,
-                // Realistic enterprise user: no cached session token, default
-                // grok.com login (no enterprise OIDC).
+                // Realistic enterprise user: no cached session token, unpinned
+                // (provider.setup is the interactive fallback).
                 has_cached_token: false,
                 ..default_inputs()
             });
@@ -886,9 +929,9 @@ mod tests {
         );
         assert_eq!(
             first_kind(&built.methods),
-            Some(AuthMethodKind::GrokCom),
-            "with api-key auth disabled and no cached token, the login method \
-             must lead so the pager requires interactive login",
+            Some(AuthMethodKind::ProviderSetup),
+            "with api-key auth disabled and no cached token, provider.setup \
+             must lead so the pager opens the provider setup form",
         );
         assert!(built.default_auth_method_id.is_none());
     }
@@ -1045,8 +1088,9 @@ mod tests {
         });
         assert_eq!(
             first_kind(&built.methods),
-            Some(AuthMethodKind::GrokCom),
-            "no cached token AND no api key: pager must show login (grok.com first)",
+            Some(AuthMethodKind::ProviderSetup),
+            "no cached token AND no api key: pager must open the provider setup \
+             form (provider.setup first)",
         );
     }
 

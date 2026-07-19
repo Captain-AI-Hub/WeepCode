@@ -1,140 +1,81 @@
-<div align="center">
+# WeepCode
 
-<h1>
-  <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="https://media.x.ai/v1/website/spacexai-symbol-white-transparent-0c31957f.png">
-    <source media="(prefers-color-scheme: light)" srcset="https://media.x.ai/v1/website/spacexai-symbol-black-transparent-6435cf42.png">
-    <img alt="SpaceXAI logo" src="https://media.x.ai/v1/website/spacexai-symbol-black-transparent-6435cf42.png" width="96">
-  </picture>
-  <br>
-  Grok Build (<code>grok</code>)
-</h1>
+**WeepCode** 是一个终端 AI 编码助手（TUI）。它理解你的代码库、编辑文件、执行 shell
+命令、管理长任务——以交互式 TUI、headless 脚本模式，或经 Agent Client Protocol（ACP）
+嵌入编辑器的方式工作。
 
-**Grok Build** is SpaceXAI's terminal-based AI coding agent. It runs as a
-full-screen TUI that understands your codebase, edits files, executes shell
-commands, searches the web, and manages long-running tasks — interactively,
-headlessly for scripting/CI, or embedded in editors via the Agent Client
-Protocol (ACP).
+本项目 fork 自 xAI 的 Grok Build，已移除 xAI 强制登录与全部 xAI 服务耦合，
+改造为**自带 Provider 的通用工具**：启动时配置一次 API Provider 即可永久使用。
 
-[Installing the released binary](#installing-the-released-binary) ·
-[Building from source](#building-from-source) ·
-[Documentation](#documentation) ·
-[Repository layout](#repository-layout) ·
-[Development](#development) ·
-[Contributing](#contributing) ·
-[License](#license)
+## 支持的 API 格式
 
-![Grok Build TUI](https://media.x.ai/v1/website/universe-tui-screenshot-6f7a0837.png)
+| 格式 | 端点 | 适用 |
+|------|------|------|
+| OpenAI Responses | `{base_url}/responses` | OpenAI Responses API |
+| OpenAI Compatible | `{base_url}/chat/completions` | OpenAI 及各类兼容服务（含本地服务） |
+| Anthropic Messages | `{base_url}/messages` | Anthropic Claude |
 
-**Learn more about Grok Build at [x.ai/cli](https://x.ai/cli)**
+每种 Provider 配置包含：base_url、api_key、模型 id、展示名称，持久化在
+`~/.grok/config.toml` 的 `[model.<name>]` 表中（文件权限 0600），重启免配置。
 
-This repository contains the Rust source for the `grok` CLI/TUI and its agent
-runtime. It is synced periodically from the SpaceXAI monorepo.
-
-A small `SOURCE_REV` file at the root records the full monorepo commit SHA
-for the version of the code present in this tree.
-
-</div>
-
----
-
-## Installing the released binary
-
-Prebuilt binaries are published for macOS, Linux, and Windows:
+## 快速开始
 
 ```sh
-curl -fsSL https://x.ai/cli/install.sh | bash   # macOS / Linux / Git Bash
-irm https://x.ai/cli/install.ps1 | iex          # Windows PowerShell
-grok --version
+cargo run -p xai-grok-pager-bin    # 构建并启动 TUI（产物名 weepcode）
 ```
 
-See the [changelog](https://x.ai/build/changelog) for the latest fixes,
-features, and improvements in each release.
+首次启动进入 **Configure API Provider** 表单：
 
-## Building from source
+1. 选择格式（OpenAI Responses / OpenAI Compatible / Anthropic）
+2. 填入 base_url（按格式预填，可改）
+3. 填入 api_key（掩码输入）
+4. 填入模型 id 与展示名称
+5. Enter 保存——写入 `~/.grok/config.toml` 并直接进入会话
 
-Requirements:
+也可以手写配置：
 
-- **Rust** — the toolchain is pinned by [`rust-toolchain.toml`](rust-toolchain.toml);
-  `rustup` installs it automatically on first build.
-- **[DotSlash](https://dotslash-cli.com)** — required so hermetic tools under
-  [`bin/`](bin/) (notably [`bin/protoc`](bin/protoc)) can download and run.
-  Install it and ensure `dotslash` is on your `PATH` **before** building:
+```toml
+# ~/.grok/config.toml
+[model.claude]
+model       = "claude-sonnet-4-5"
+name        = "Claude"
+base_url    = "https://api.anthropic.com/v1"
+api_key     = "sk-ant-..."
+api_backend = "messages"
+auth_scheme = "x_api_key"
 
-  ```sh
-  cargo install dotslash
-  # or: prebuilt packages — https://dotslash-cli.com/docs/installation/
-  /usr/bin/env dotslash --help   # sanity check
-  ```
+[models]
+default = "claude"
+```
 
-- **protoc** — proto codegen resolves [`bin/protoc`](bin/protoc) via DotSlash,
-  or falls back to a `protoc` on `PATH` / `$PROTOC`.
-- macOS and Linux are supported build hosts; Windows builds are best-effort
-  and not currently tested from this tree.
+## 构建要求
+
+- **Rust**：工具链由 `rust-toolchain.toml` 锁定
+- **protoc**：proto codegen 需要；放在 `PATH` 上或设置 `PROTOC` 环境变量。
+  （上游的 DotSlash 方式仍兼容：安装 dotslash 后会自动使用 `bin/protoc`）
 
 ```sh
-cargo run -p xai-grok-pager-bin              # build + launch the TUI
-cargo build -p xai-grok-pager-bin --release  # release binary: target/release/xai-grok-pager
-cargo check -p xai-grok-pager-bin            # fast validation
+export PROTOC=$PWD/.tools/protoc/bin/protoc   # 如使用本地 protoc
+cargo build -p xai-grok-pager-bin              # 产物：target/debug/weepcode
+cargo check -p xai-grok-pager-bin              # 快速验证
 ```
 
-The binary artifact is named `xai-grok-pager`; official installs ship it as
-`grok`. On first launch it opens your browser to authenticate — see the
-[authentication guide](crates/codegen/xai-grok-pager/docs/user-guide/02-authentication.md).
+## 仓库文档
 
-## Documentation
+- `AGENTS.md` — agent 入口规则（命名、进度、门禁纪律）
+- `docs/project.md` — 整体架构审计
+- `docs/codemap.md` — 改造计划：阶段、checklist、硬门禁
+- `docs/rule.md` — 项目规则
+- `docs/process/` — 每日进度记录
 
-Full online documentation is available at
-[docs.x.ai/build/overview](https://docs.x.ai/build/overview).
+## 与上游（Grok Build）的差异
 
-The user guide ships with the pager crate:
-[`crates/codegen/xai-grok-pager/docs/user-guide/`](crates/codegen/xai-grok-pager/docs/user-guide/)
-— getting started, keyboard shortcuts, slash commands, configuration, theming,
-MCP servers, skills, plugins, hooks, headless mode, sandboxing, and more.
-
-## Repository layout
-
-| Path | Contents |
-|------|----------|
-| `crates/codegen/xai-grok-pager-bin` | Composition-root package; builds the `xai-grok-pager` binary |
-| `crates/codegen/xai-grok-pager` | The TUI: scrollback, prompt, modals, rendering |
-| `crates/codegen/xai-grok-shell` | Agent runtime + leader/stdio/headless entry points |
-| `crates/codegen/xai-grok-tools` | Tool implementations (terminal, file edit, search, ...) |
-| `crates/codegen/xai-grok-workspace` | Host filesystem, VCS, execution, checkpoints |
-| `crates/codegen/...` | The rest of the CLI crate closure (config, MCP, markdown, sandbox, ...) |
-| `crates/common/`, `crates/build/`, `prod/mc/` | Small shared leaf crates pulled in by the closure |
-| `third_party/` | Vendored upstream source (Mermaid diagram stack) — see below |
-
-> [!IMPORTANT]
-> The root `Cargo.toml` (workspace members, dependency versions, lints,
-> profiles) is **generated** — treat it as read-only. Prefer editing per-crate
-> `Cargo.toml` files.
-
-## Development
-
-```sh
-cargo check -p <crate>        # always target specific crates; full-workspace builds are slow
-cargo test -p xai-grok-config # per-crate tests
-cargo clippy -p <crate>       # lint config: clippy.toml at the repo root
-cargo fmt --all               # rustfmt.toml at the repo root
-```
-
-## Contributing
-
-> [!NOTE]
-> External contributions are not accepted. See [`CONTRIBUTING.md`](CONTRIBUTING.md).
+- 无 xAI OAuth / grok.com 登录；Provider 设置取而代之
+- 无遥测上报、无自更新通道、无公告/付费门（无 xAI 凭证时全部不激活）
+- `x-grok-*` 等 xAI 追踪头只发往一方端点，第三方 Provider 收不到
+- crate 名（`xai-grok-*`）、环境变量（`GROK_*`/`XAI_*`）、配置目录（`~/.grok`）
+  暂时保持兼容，全量改名见 `docs/codemap.md` Phase 5
 
 ## License
 
-First-party code in this repository is licensed under the **Apache License,
-Version 2.0** — see [`LICENSE`](LICENSE).
-
-Third-party and vendored code remains under its original licenses. See:
-
-- [`THIRD-PARTY-NOTICES`](THIRD-PARTY-NOTICES) — crates.io / git dependencies,
-  bundled UI themes, and **in-tree source ports** (including openai/codex and
-  sst/opencode tool implementations)
-- [`crates/codegen/xai-grok-tools/THIRD_PARTY_NOTICES.md`](crates/codegen/xai-grok-tools/THIRD_PARTY_NOTICES.md)
-  — crate-local notice for the codex and opencode ports (license texts +
-  Apache §4(b) change notice)
-- [`third_party/NOTICE`](third_party/NOTICE) — vendored Mermaid-stack index
+Apache-2.0（与上游一致），见 `LICENSE` 与 `THIRD-PARTY-NOTICES`。

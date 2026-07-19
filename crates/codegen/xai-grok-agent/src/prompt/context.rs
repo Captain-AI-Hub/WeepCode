@@ -149,8 +149,9 @@ pub struct PromptContext {
     #[serde(default = "default_system_prompt_label")]
     pub system_prompt_label: String,
 }
-/// Default identity on trim-tool-descriptions (`You are Grok released by xAI`).
-pub const DEFAULT_SYSTEM_PROMPT_LABEL: &str = "Grok";
+/// Default identity in the system prompt (`You are <label>.`).
+/// WeepCode: neutral default; the xAI "Grok" identity is gone.
+pub const DEFAULT_SYSTEM_PROMPT_LABEL: &str = "WeepCode";
 fn default_system_prompt_label() -> String {
     DEFAULT_SYSTEM_PROMPT_LABEL.to_string()
 }

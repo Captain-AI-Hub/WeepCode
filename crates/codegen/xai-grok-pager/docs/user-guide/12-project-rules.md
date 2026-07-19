@@ -202,7 +202,7 @@ These are all optional. See the respective guides for details on each.
 
 ## Inspecting Loaded Rules
 
-Use `grok inspect` to see all loaded project instructions:
+Use `weepcode inspect` to see all loaded project instructions:
 
 ```bash
 grok inspect

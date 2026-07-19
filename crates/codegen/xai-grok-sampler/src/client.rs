@@ -40,6 +40,10 @@ const DEFAULT_CLIENT_IDENTIFIER: &str = "grok-shell";
 const AGENT_PRODUCT: &str = "grok-shell";
 const ANTHROPIC_DEFAULT_MAX_TOKENS: u32 = 128_000;
 
+/// Pinned `anthropic-version` header value for the Messages backend, injected
+/// when the caller didn't set one explicitly via `extra_headers`.
+const ANTHROPIC_VERSION: &str = "2023-06-01";
+
 /// Per-request `x-grok-*` headers. Optional fields are skipped when empty/`None`.
 struct GrokRequestHeaders<'a> {
     conv_id: &'a str,
@@ -71,6 +75,36 @@ impl GrokRequestHeaders<'_> {
         }
         b
     }
+}
+
+/// Whether `base_url` points at a first-party xAI/grok host.
+///
+/// `x-grok-*` tracking headers (conv/session/agent ids, deployment id, user
+/// id, client version/identifier) exist for xAI's proxy observability and
+/// must never leak to third-party provider endpoints (OpenAI, Anthropic,
+/// self-hosted OpenAI-compatible servers). Computed once from the client's
+/// `base_url`; host extraction is deliberately dependency-free.
+fn is_first_party_inference_base_url(base_url: &str) -> bool {
+    let after_scheme = base_url
+        .split_once("://")
+        .map(|(_, rest)| rest)
+        .unwrap_or(base_url);
+    let host_port = after_scheme
+        .split(['/', '?', '#'])
+        .next()
+        .unwrap_or_default();
+    let host = host_port
+        .rsplit('@')
+        .next()
+        .unwrap_or(host_port)
+        .split(':')
+        .next()
+        .unwrap_or_default()
+        .to_ascii_lowercase();
+    host == "x.ai"
+        || host.ends_with(".x.ai")
+        || host == "grok.com"
+        || host.ends_with(".grok.com")
 }
 
 /// Parse the `Retry-After` response header as delta-seconds.
@@ -290,6 +324,9 @@ pub struct SamplingClient {
     bearer_resolver: Option<crate::config::SharedBearerResolver>,
     /// Per-request header injection (OTel traceparent).
     header_injector: Option<crate::config::SharedHeaderInjector>,
+    /// Computed in [`SamplingClient::new`] from `base_url`: `x-grok-*`
+    /// tracking headers are only attached when the endpoint is first-party.
+    send_xai_tracking_headers: bool,
 }
 
 impl std::fmt::Debug for SamplingClient {
@@ -444,8 +481,26 @@ impl SamplingClient {
             headers.insert(header_name, header_value);
         }
 
+        // The Anthropic Messages API requires an explicit `anthropic-version`
+        // header on every request. Supply the pinned default when the caller
+        // didn't set one via `[model.*].extra_headers` (an explicit value
+        // always wins).
+        if config.api_backend == ApiBackend::Messages
+            && !headers.contains_key(HeaderName::from_static("anthropic-version"))
+        {
+            headers.insert(
+                HeaderName::from_static("anthropic-version"),
+                HeaderValue::from_static(ANTHROPIC_VERSION),
+            );
+        }
+
+        // xAI tracking headers are only meaningful to (and only safe for)
+        // first-party hosts; third-party provider endpoints never see them.
+        let send_xai_tracking_headers = is_first_party_inference_base_url(&config.base_url);
+
         // Add x-grok-client-version header for version gating at the proxy.
-        if let Some(client_version) = config.client_version.as_ref()
+        if send_xai_tracking_headers
+            && let Some(client_version) = config.client_version.as_ref()
             && let Ok(header_value) = HeaderValue::from_str(client_version)
         {
             headers.insert(
@@ -454,7 +509,8 @@ impl SamplingClient {
             );
         }
 
-        if let Some(deployment_id) = config.deployment_id.as_ref()
+        if send_xai_tracking_headers
+            && let Some(deployment_id) = config.deployment_id.as_ref()
             && let Ok(header_value) = HeaderValue::from_str(deployment_id)
         {
             headers.insert(
@@ -463,13 +519,14 @@ impl SamplingClient {
             );
         }
 
-        if let Some(user_id) = config.user_id.as_ref()
+        if send_xai_tracking_headers
+            && let Some(user_id) = config.user_id.as_ref()
             && let Ok(header_value) = HeaderValue::from_str(user_id)
         {
             headers.insert(HeaderName::from_static("x-grok-user-id"), header_value);
         }
 
-        {
+        if send_xai_tracking_headers {
             let client_id = config
                 .client_identifier
                 .clone()
@@ -538,6 +595,7 @@ impl SamplingClient {
             attribution_callback: config.attribution_callback,
             bearer_resolver: config.bearer_resolver,
             header_injector: config.header_injector,
+            send_xai_tracking_headers,
         })
     }
 
@@ -594,6 +652,21 @@ impl SamplingClient {
             injector.inject(&mut headers);
         }
         self.http.post(url).headers(headers)
+    }
+
+    /// Attach per-request `x-grok-*` tracking headers for first-party
+    /// endpoints only; third-party provider endpoints get the request
+    /// builder back untouched so no xAI identifiers leak.
+    fn with_tracking_headers(
+        &self,
+        tracking: GrokRequestHeaders<'_>,
+        builder: reqwest::RequestBuilder,
+    ) -> reqwest::RequestBuilder {
+        if self.send_xai_tracking_headers {
+            tracking.apply(builder)
+        } else {
+            builder
+        }
     }
 
     /// Bearer prefix for 401 attribution. Prefers live resolver, falls back to default_headers.
@@ -861,8 +934,10 @@ impl SamplingClient {
             deployment_id: payload.x_grok_deployment_id.as_deref(),
             user_id: payload.x_grok_user_id.as_deref(),
         };
-        let http_request = grok_headers
-            .apply(self.post(self.endpoint("chat/completions")))
+        let http_request = self.with_tracking_headers(
+            grok_headers,
+            self.post(self.endpoint("chat/completions")),
+        )
             .json(&payload);
 
         let response = http_request.send().await.map_err(|e| {
@@ -919,8 +994,10 @@ impl SamplingClient {
             deployment_id: payload.x_grok_deployment_id.as_deref(),
             user_id: payload.x_grok_user_id.as_deref(),
         };
-        let http_request = grok_headers
-            .apply(self.post(self.endpoint("chat/completions")))
+        let http_request = self.with_tracking_headers(
+            grok_headers,
+            self.post(self.endpoint("chat/completions")),
+        )
             .header(ACCEPT, HeaderValue::from_static("text/event-stream"))
             .json(&streaming_request);
 
@@ -1142,8 +1219,10 @@ impl SamplingClient {
         // it in post-serialize. This is the last surviving piece of the
         // old raw_output machinery.
         xai_grok_sampling_types::patch_reasoning_text_types(&mut request_body);
-        let http_request = grok_headers
-            .apply(self.post(self.endpoint("responses")))
+        let http_request = self.with_tracking_headers(
+            grok_headers,
+            self.post(self.endpoint("responses")),
+        )
             .json(&request_body);
 
         let response = http_request.send().await.map_err(|e| {
@@ -1293,8 +1372,8 @@ impl SamplingClient {
             .defaults
             .doom_loop_recovery
             .map(crate::doom_loop::DoomLoopSignalCollector::new);
-        let mut http_request = grok_headers
-            .apply(self.post(self.endpoint("responses")))
+        let mut http_request = self
+            .with_tracking_headers(grok_headers, self.post(self.endpoint("responses")))
             .header(ACCEPT, HeaderValue::from_static("text/event-stream"));
         if doom_loop.is_some() {
             // Presence opts in; the server ignores the value.
@@ -1500,8 +1579,10 @@ impl SamplingClient {
             deployment_id: request.x_grok_deployment_id.as_deref(),
             user_id: request.x_grok_user_id.as_deref(),
         };
-        let http_request = grok_headers
-            .apply(self.post(self.endpoint("messages")))
+        let http_request = self.with_tracking_headers(
+            grok_headers,
+            self.post(self.endpoint("messages")),
+        )
             .json(&request.inner);
 
         let response = http_request.send().await.map_err(|e| {
@@ -1616,8 +1697,10 @@ impl SamplingClient {
             deployment_id: request.x_grok_deployment_id.as_deref(),
             user_id: request.x_grok_user_id.as_deref(),
         };
-        let http_request = grok_headers
-            .apply(self.post(self.endpoint("messages")))
+        let http_request = self.with_tracking_headers(
+            grok_headers,
+            self.post(self.endpoint("messages")),
+        )
             .header(ACCEPT, HeaderValue::from_static("text/event-stream"))
             .json(&request.inner);
 
@@ -2741,5 +2824,100 @@ mod tests {
             event,
             rs::ResponseStreamEvent::ResponseOutputTextDelta(_)
         ));
+    }
+
+    #[test]
+    fn first_party_host_detection() {
+        assert!(is_first_party_inference_base_url("https://api.x.ai/v1"));
+        assert!(is_first_party_inference_base_url("https://cli-chat-proxy.grok.com/v1"));
+        assert!(is_first_party_inference_base_url("https://x.ai/v1"));
+        assert!(!is_first_party_inference_base_url("https://api.openai.com/v1"));
+        assert!(!is_first_party_inference_base_url("https://api.anthropic.com"));
+        assert!(!is_first_party_inference_base_url("http://localhost:8080/v1"));
+        // Lookalike hosts must not match: suffix checks are label-aware.
+        assert!(!is_first_party_inference_base_url("https://notx.ai/v1"));
+        assert!(!is_first_party_inference_base_url("https://evil-grok.com/v1"));
+        assert!(!is_first_party_inference_base_url("https://x.ai.evil.com/v1"));
+    }
+
+    #[test]
+    fn anthropic_version_header_injected_for_messages_backend() {
+        let config = SamplerConfig {
+            api_backend: ApiBackend::Messages,
+            ..minimal_config()
+        };
+        let client = SamplingClient::new(config).unwrap();
+        assert_eq!(
+            client.default_headers.get("anthropic-version"),
+            Some(&HeaderValue::from_static(ANTHROPIC_VERSION)),
+        );
+    }
+
+    #[test]
+    fn anthropic_version_header_respects_extra_headers_override() {
+        let mut extra_headers = IndexMap::new();
+        extra_headers.insert("anthropic-version".to_string(), "2099-01-01".to_string());
+        let config = SamplerConfig {
+            api_backend: ApiBackend::Messages,
+            extra_headers,
+            ..minimal_config()
+        };
+        let client = SamplingClient::new(config).unwrap();
+        assert_eq!(
+            client.default_headers.get("anthropic-version"),
+            Some(&HeaderValue::from_static("2099-01-01")),
+            "explicit extra_headers value must win over the pinned default"
+        );
+    }
+
+    #[test]
+    fn anthropic_version_header_not_injected_for_other_backends() {
+        let client = SamplingClient::new(minimal_config()).unwrap();
+        assert!(client.default_headers.get("anthropic-version").is_none());
+    }
+
+    #[test]
+    fn xai_tracking_headers_omitted_for_third_party_base_url() {
+        // minimal_config uses https://example.test (third-party).
+        let config = SamplerConfig {
+            client_version: Some("1.2.3".to_string()),
+            deployment_id: Some("dep-1".to_string()),
+            user_id: Some("user-1".to_string()),
+            ..minimal_config()
+        };
+        let client = SamplingClient::new(config).unwrap();
+        assert!(!client.send_xai_tracking_headers);
+        for name in [
+            "x-grok-client-version",
+            "x-grok-deployment-id",
+            "x-grok-user-id",
+            "x-grok-client-identifier",
+        ] {
+            assert!(
+                client.default_headers.get(name).is_none(),
+                "{name} must not be sent to third-party endpoints"
+            );
+        }
+    }
+
+    #[test]
+    fn xai_tracking_headers_sent_to_first_party_base_url() {
+        let config = SamplerConfig {
+            base_url: "https://api.x.ai/v1".to_string(),
+            client_version: Some("1.2.3".to_string()),
+            deployment_id: Some("dep-1".to_string()),
+            user_id: Some("user-1".to_string()),
+            ..minimal_config()
+        };
+        let client = SamplingClient::new(config).unwrap();
+        assert!(client.send_xai_tracking_headers);
+        assert_eq!(
+            client.default_headers.get("x-grok-client-version"),
+            Some(&HeaderValue::from_static("1.2.3")),
+        );
+        assert_eq!(
+            client.default_headers.get("x-grok-user-id"),
+            Some(&HeaderValue::from_static("user-1")),
+        );
     }
 }

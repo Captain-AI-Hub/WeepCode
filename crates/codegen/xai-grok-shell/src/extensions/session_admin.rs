@@ -551,6 +551,21 @@ fn cwd_matches(session_cwd: &std::path::Path, target_cwd: &std::path::Path) -> b
 /// in-place. Prefetched (API) and default models are NOT re-fetched -- only
 /// BYOK entries from config are updated.
 fn handle_reload_models(agent: &MvpAgent) -> ExtResult {
+    reload_models_from_disk(agent)?;
+    let count = agent.models_manager.models().len();
+    tracing::info!(count, "model list reloaded from config.toml");
+    ExtMethodResult::success(serde_json::json!({ "models": count }))
+        .to_ext_response()
+        .map_err(|e| acp::Error::internal_error().data(e.to_string()))
+}
+
+/// Re-read config.toml from disk and swap the agent's model list in-place.
+///
+/// Shared by the `x.ai/internal/reload_models` hot-reload route and the
+/// `weepcode/provider/save` provider-setup route: both mutate `[model.*]` /
+/// `[models]` on disk and then need the live catalog rebuilt. Returns the ACP
+/// error to surface on failure so callers can wrap it in their own envelope.
+pub(crate) fn reload_models_from_disk(agent: &MvpAgent) -> Result<(), acp::Error> {
     let disk_config = crate::config::load_effective_config()
         .map_err(|e| acp::Error::internal_error().data(e.to_string()))?;
 
@@ -587,12 +602,7 @@ fn handle_reload_models(agent: &MvpAgent) -> ExtResult {
 
     agent.models_manager.apply_config(merged_config);
     agent.sync_process_static_api_key(None);
-
-    let count = agent.models_manager.models().len();
-    tracing::info!(count, "model list reloaded from config.toml");
-    ExtMethodResult::success(serde_json::json!({ "models": count }))
-        .to_ext_response()
-        .map_err(|e| acp::Error::internal_error().data(e.to_string()))
+    Ok(())
 }
 
 // internal/reload_models_cache

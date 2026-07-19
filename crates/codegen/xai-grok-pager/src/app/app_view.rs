@@ -957,6 +957,9 @@ pub struct AppView {
     pub auth_start_mode: AuthMode,
     /// Text buffer for manual auth token paste (loopback mode).
     pub auth_code_input: String,
+    /// Live provider setup form state (WeepCode); `Some` while the form is
+    /// open on the welcome screen.
+    pub provider_setup_form: Option<crate::views::provider_setup::ProviderSetupForm>,
     /// Monotonically increasing sequence number for auth requests.
     pub next_auth_request_seq: u64,
     /// Abort handle for the in-flight `PollAuthUrl` task (with its request_seq).
@@ -1296,6 +1299,7 @@ impl AppView {
             login_method_id: None,
             auth_start_mode: AuthMode::Pending,
             auth_code_input: String::new(),
+            provider_setup_form: None,
             next_auth_request_seq: 1,
             auth_url_poll_handle: None,
             deferred_startup: Default::default(),
@@ -2143,6 +2147,7 @@ impl AppView {
                     cwd: &self.cwd,
                     mid_session_login: self.auth_return_view.is_some(),
                     auth_code_input: &mut self.auth_code_input,
+                    provider_setup_form: &mut self.provider_setup_form,
                     prompt: &mut self.welcome_prompt,
                     prompt_focused: &mut self.welcome_prompt_focused,
                     new_worktree_dialog: &mut self.new_worktree_dialog,
@@ -2696,6 +2701,9 @@ struct WelcomeInputCtx<'a> {
     /// login and return to the session rather than quitting the app.
     mid_session_login: bool,
     auth_code_input: &'a mut String,
+    /// Provider setup form (WeepCode); while `Some`, it intercepts all
+    /// welcome-screen keyboard/paste input.
+    provider_setup_form: &'a mut Option<crate::views::provider_setup::ProviderSetupForm>,
     prompt: &'a mut PromptWidget,
     prompt_focused: &'a mut bool,
     new_worktree_dialog: &'a mut Option<NewWorktreeDialogState>,
@@ -2825,6 +2833,29 @@ fn handle_welcome_input(ev: &Event, ctx: &mut WelcomeInputCtx<'_>) -> InputOutco
                     _ => return InputOutcome::Changed,
                 }
             }
+        }
+        return InputOutcome::Unchanged;
+    }
+    // WeepCode: the provider setup form owns the welcome screen while open —
+    // all keys/pastes route to it until it submits or is cancelled.
+    if let Some(form) = ctx.provider_setup_form.as_mut() {
+        use crate::views::provider_setup::ProviderSetupOutcome;
+        if let Event::Key(key) = ev {
+            if key.kind == crossterm::event::KeyEventKind::Release {
+                return InputOutcome::Unchanged;
+            }
+            return match form.handle_key(key) {
+                ProviderSetupOutcome::Submit => InputOutcome::Action(Action::ProviderSetupSubmit),
+                ProviderSetupOutcome::Cancel => InputOutcome::Action(Action::ProviderSetupCancel),
+                ProviderSetupOutcome::Changed => InputOutcome::Changed,
+                ProviderSetupOutcome::Unchanged => InputOutcome::Unchanged,
+            };
+        }
+        if let Event::Paste(text) = ev {
+            return match form.handle_paste(text) {
+                ProviderSetupOutcome::Changed => InputOutcome::Changed,
+                _ => InputOutcome::Unchanged,
+            };
         }
         return InputOutcome::Unchanged;
     }
@@ -3878,6 +3909,7 @@ impl AppView {
                             trust_state: &self.trust_state,
                             login_label: self.login_label.as_deref(),
                             auth_code_input: &self.auth_code_input,
+                            provider_setup_form: self.provider_setup_form.as_ref(),
                             clipboard_copied: self.auth_clipboard_copied,
                             show_raw_url: self.auth_show_raw_url,
                             announcement: hero_announcement,
@@ -5202,6 +5234,7 @@ pub(crate) mod tests {
             login_method_id: None,
             auth_start_mode: AuthMode::Pending,
             auth_code_input: String::new(),
+            provider_setup_form: None,
             next_auth_request_seq: 1,
             auth_url_poll_handle: None,
             deferred_startup: Default::default(),
@@ -6605,7 +6638,7 @@ pub(crate) mod tests {
     fn apply_auth_meta_clears_gate_on_subscription() {
         let mut app = test_app();
         app.gate = Some(xai_grok_shell::auth::GateInfo {
-            message: "Subscribe to use Grok Build".into(),
+            message: "Subscribe to use WeepCode".into(),
             url: Some("https://grok.com/supergrok?referrer=grok-build".into()),
             label: None,
         });

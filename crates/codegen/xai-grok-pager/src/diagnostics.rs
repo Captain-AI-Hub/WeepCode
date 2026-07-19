@@ -833,7 +833,7 @@ pub fn color_support_warning(
             None,
             None,
         );
-        warning.note = Some("Unset NO_COLOR and restart Grok.".to_string());
+        warning.note = Some("Unset NO_COLOR and restart WeepCode.".to_string());
         return Some(warning);
     }
 
@@ -870,7 +870,7 @@ pub fn color_support_warning(
         Some("export COLORTERM=truecolor"),
         None,
     );
-    warning.note = Some("Persist in ~/.zshrc / ~/.bashrc and restart Grok.".to_string());
+    warning.note = Some("Persist in ~/.zshrc / ~/.bashrc and restart WeepCode.".to_string());
     Some(warning)
 }
 

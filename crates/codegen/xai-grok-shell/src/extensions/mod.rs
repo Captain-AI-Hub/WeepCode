@@ -20,6 +20,7 @@ pub mod plugins;
 pub mod pr;
 pub mod privacy;
 pub mod prompt_history;
+pub mod provider_setup;
 pub mod prompt_meta;
 pub mod recap;
 pub mod repair;

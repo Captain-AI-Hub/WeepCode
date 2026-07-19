@@ -324,7 +324,7 @@ lambda = 0.7             # 0.0 = max diversity, 1.0 = pure relevance
 
 ## CLI Commands
 
-The `grok memory` command manages memory from the shell. It has one subcommand, `clear`:
+The `weepcode memory` command manages memory from the shell. It has one subcommand, `clear`:
 
 ```bash
 # Clear workspace memory (MEMORY.md, sessions/, and index.sqlite). This is the default scope.
@@ -450,8 +450,8 @@ enabled = true    # default
 
 ### Memory Not Working
 
-1. Verify memory is enabled: check `grok inspect` output.
-2. Check the flag: `grok --experimental-memory` or `GROK_MEMORY=1`.
+1. Verify memory is enabled: check `weepcode inspect` output.
+2. Check the flag: `weepcode --experimental-memory` or `GROK_MEMORY=1`.
 3. Check for `--no-memory` or `GROK_MEMORY=0` overriding your config.
 
 ### Memory Not Appearing in Sessions

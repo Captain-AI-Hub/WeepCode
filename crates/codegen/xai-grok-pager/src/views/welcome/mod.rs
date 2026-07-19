@@ -376,11 +376,11 @@ impl WelcomeLayout {
 
 /// Controls what the version badge renders.
 pub(super) enum VersionBadgeMode<'a> {
-    /// Full badge: team | tier | api_key | **Grok Build** VERSION+channel **Beta** (right-aligned).
+    /// Full badge: team | tier | api_key | **WeepCode** VERSION+channel **Beta** (right-aligned).
     Full { subscription_tier: Option<&'a str> },
-    /// Hero footer: team | api_key | Grok Build Beta [channel] (right-aligned, gray).
+    /// Hero footer: team | api_key | WeepCode Beta [channel] (right-aligned, gray).
     HeroFooter,
-    /// Hero inline: **Grok Build Beta**  VERSION (left-aligned).
+    /// Hero inline: **WeepCode Beta**  VERSION (left-aligned).
     HeroInline,
 }
 
@@ -436,7 +436,7 @@ pub(super) fn render_version_badge(
     match &mode {
         VersionBadgeMode::Full { .. } => {
             spans.push(Span::styled(
-                "Grok Build  ",
+                "WeepCode  ",
                 Style::default()
                     .fg(theme.text_primary)
                     .add_modifier(Modifier::BOLD),
@@ -465,7 +465,7 @@ pub(super) fn render_version_badge(
         }
         VersionBadgeMode::HeroInline => {
             spans.push(Span::styled(
-                "Grok Build Beta  ",
+                "WeepCode Beta  ",
                 Style::default()
                     .fg(theme.text_primary)
                     .add_modifier(Modifier::BOLD),
@@ -589,6 +589,9 @@ pub struct WelcomeRenderParams<'a> {
     pub trust_state: &'a TrustState,
     pub login_label: Option<&'a str>,
     pub auth_code_input: &'a str,
+    /// Live provider setup form (WeepCode); when `Some`, the `Pending` auth
+    /// state renders the form instead of the login menu.
+    pub provider_setup_form: Option<&'a crate::views::provider_setup::ProviderSetupForm>,
     pub clipboard_copied: bool,
     pub show_raw_url: bool,
     pub announcement: Option<&'a xai_grok_announcements::RemoteAnnouncement>,
@@ -684,43 +687,71 @@ pub fn render_welcome(
 
     let mut result = match params.auth_state {
         AuthState::Pending { error } => {
-            let label = params.login_label.unwrap_or("grok.com");
-            let login_text = format!("Login with {}", label);
-            let menu = [("l", login_text.as_str()), ("q", "Quit")];
-            let msg = error.as_deref().map(|e| (e, theme.accent_error));
-            let info = PromptInfo {
-                model_name: params.model_name,
-                flags: params.flags,
-                multiline: false,
-                usage_warning: None,
-                usage_warning_critical: false,
-            };
-            let (menu_rects, post_flush_escapes) = render_welcome_blocked(
-                content_area,
-                buf,
-                msg,
-                &menu,
-                params.selected,
-                Some((prompt, &info)),
-                h_margin,
-                params.compact,
-            );
-            WelcomeRenderResult {
-                cursor_pos: None,
-                post_flush_escapes,
-                menu_rects,
-                prompt_rect: None,
-                session_picker_hit_areas: None,
-                import_banner_rect: None,
-                auth_url_rect: None,
-                auth_fallback_rect: None,
-                refresh_rect: None,
-                gate_url_rect: None,
-                changelog_action_present: false,
-                changelog_cta_rect: None,
-                announcement_truncated: false,
-                announcement_rect: None,
-                upgrade_cta_rect: None,
+            // WeepCode: the provider setup form replaces the login menu while
+            // open — the whole content area goes to the form.
+            if let Some(form) = params.provider_setup_form {
+                crate::views::provider_setup::render_provider_setup_form(
+                    content_area,
+                    buf,
+                    form,
+                    params.compact,
+                );
+                WelcomeRenderResult {
+                    cursor_pos: None,
+                    post_flush_escapes: None,
+                    menu_rects: vec![],
+                    prompt_rect: None,
+                    session_picker_hit_areas: None,
+                    import_banner_rect: None,
+                    auth_url_rect: None,
+                    auth_fallback_rect: None,
+                    refresh_rect: None,
+                    gate_url_rect: None,
+                    changelog_action_present: false,
+                    changelog_cta_rect: None,
+                    announcement_truncated: false,
+                    announcement_rect: None,
+                    upgrade_cta_rect: None,
+                }
+            } else {
+                let label = params.login_label.unwrap_or("API Provider");
+                let login_text = format!("Configure {}", label);
+                let menu = [("l", login_text.as_str()), ("q", "Quit")];
+                let msg = error.as_deref().map(|e| (e, theme.accent_error));
+                let info = PromptInfo {
+                    model_name: params.model_name,
+                    flags: params.flags,
+                    multiline: false,
+                    usage_warning: None,
+                    usage_warning_critical: false,
+                };
+                let (menu_rects, post_flush_escapes) = render_welcome_blocked(
+                    content_area,
+                    buf,
+                    msg,
+                    &menu,
+                    params.selected,
+                    Some((prompt, &info)),
+                    h_margin,
+                    params.compact,
+                );
+                WelcomeRenderResult {
+                    cursor_pos: None,
+                    post_flush_escapes,
+                    menu_rects,
+                    prompt_rect: None,
+                    session_picker_hit_areas: None,
+                    import_banner_rect: None,
+                    auth_url_rect: None,
+                    auth_fallback_rect: None,
+                    refresh_rect: None,
+                    gate_url_rect: None,
+                    changelog_action_present: false,
+                    changelog_cta_rect: None,
+                    announcement_truncated: false,
+                    announcement_rect: None,
+                    upgrade_cta_rect: None,
+                }
             }
         }
         AuthState::Authenticating { auth_url, mode, .. } => {
@@ -760,7 +791,7 @@ pub fn render_welcome(
                 content_area,
                 buf,
                 Some((
-                    "Grok Build is not yet available for this account.",
+                    "WeepCode is not yet available for this account.",
                     theme.gray_bright,
                 )),
                 &menu,
@@ -918,7 +949,7 @@ fn render_welcome_blocked(
 
 /// Render the folder-trust question. Mirrors [`render_welcome_blocked`]'s
 /// stacked layout (logo + message + menu + version badge), but the message is a
-/// multi-line block showing the workspace path and the warning that Grok Build
+/// multi-line block showing the workspace path and the warning that WeepCode
 /// may run or modify contents in this directory (a security risk). The y/N
 /// answer is handled by the welcome input interceptor, so this only paints;
 /// `menu_rects` are returned for parity with the other welcome arms.
@@ -947,7 +978,7 @@ fn render_welcome_trust(
         // Two lines so the warning never clips at narrow / compact widths
         // (a single ~78-char line would truncate "...posing security risks").
         Line::from(Span::styled(
-            "Grok Build may run or modify contents in this directory,",
+            "WeepCode may run or modify contents in this directory,",
             Style::default().fg(theme.gray),
         ))
         .alignment(Alignment::Center),
@@ -1939,7 +1970,7 @@ fn render_welcome_done(
         let gate_text = p
             .gate
             .map(|g| g.message.as_str())
-            .unwrap_or("SuperGrok subscription required");
+            .unwrap_or("Access is not enabled for this account");
         let msg = Line::from(Span::styled(
             gate_text,
             Style::default().fg(theme.gray_bright),
@@ -2538,6 +2569,7 @@ mod tests {
             trust_state,
             login_label: None,
             auth_code_input: "",
+            provider_setup_form: None,
             clipboard_copied: false,
             show_raw_url: false,
             announcement: None,
