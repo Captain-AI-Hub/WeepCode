@@ -112,6 +112,11 @@ def main():
     type_text(fd, "smoke-model-1")
     os.write(fd, b"\t")  # -> Display name
     type_text(fd, "Smoke Provider")
+    os.write(fd, b"\t")  # -> Max context (pre-filled 200000; replace it)
+    for _ in range(8):
+        os.write(fd, b"\x7f")  # Backspace
+        time.sleep(0.01)
+    type_text(fd, "128000")
     os.write(fd, b"\r")  # Enter -> submit
     read_available(fd, transcript, 15)
 
@@ -132,6 +137,7 @@ def main():
         'base_url = "http://127.0.0.1:9/v1"',
         'api_key = "sk-weepcode-smoke-test"',
         'api_backend = "chat_completions"',
+        "context_window = 128000",
         '[models]',
         'default = "smoke-provider"',
     ):

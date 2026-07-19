@@ -483,12 +483,13 @@ Manage personas -- create, edit, and delete personas. A subagent can apply a per
 
 ## Account and Billing
 
-### `/login`
+### `/config`
 
-Log in or re-authenticate with your account without leaving the session.
+Open the API provider setup form without leaving the session
+(alias: `/login`).
 
 ```
-/login
+/config
 ```
 
 ### `/logout`

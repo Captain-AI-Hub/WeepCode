@@ -30,6 +30,7 @@ struct SaveProviderParams {
     api_key: String,
     model_id: String,
     display_name: String,
+    context_window: Option<u64>,
 }
 
 fn handle_save_provider(agent: &MvpAgent, args: &acp::ExtRequest) -> ExtResult {
@@ -46,6 +47,7 @@ fn handle_save_provider(agent: &MvpAgent, args: &acp::ExtRequest) -> ExtResult {
         api_key: params.api_key,
         model_id: params.model_id,
         display_name: params.display_name,
+        context_window: params.context_window,
     }
     .validated()
     .map_err(|e| acp::Error::invalid_params().data(e))?;

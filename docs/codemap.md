@@ -139,6 +139,26 @@ crate（80 个 xai-grok-*）、env 变量（GROK_*/XAI_*）、配置目录（~/.
 
 ---
 
+## Phase 6 — login → config 改名 + 表单最大上下文窗口（2026-07-19 用户提出）
+
+目标：「login」之名已无实（不再有登录），改名为 config；添加模型时可设置最大上下文窗口。
+
+- [x] CLI 子命令 `login` → `config`（app/cli.rs + pager-bin main.rs）；
+      `login` 保留为 clap alias 兼容
+- [x] slash 命令 `/login` → `/config`（文件已改名 config.rs），`/login` 保留为 alias；
+      欢迎屏/表单提示文案同步
+- [x] Provider 表单新增第 6 字段「Max context (tokens)」：纯数字、预填 200000；
+      链路：pager 表单 → Effect::SaveProviderProfile → `weepcode/provider/save` 参数 →
+      `provider_profile` 写入 `[model.*].context_window`
+- [x] 测试：表单校验（数字/空/非法/粘贴过滤）、upsert 含 context_window 往返与省略、零值拒绝
+
+**硬门禁 G6**：
+1. `weepcode config` 与 `weepcode login`（alias）均打印配置指引；TUI 内 `/config` 与 `/login` 均可用
+2. `cargo test` 涉及 crate 通过；表单提交带 context_window 后 `config.toml` 正确落盘该字段
+3. PTY 冒烟复跑通过（新增字段后表单键序同步更新）
+
+---
+
 ## 执行纪律
 
 - 任一硬门禁未通过 → 停在当前阶段修复，禁止跳阶段

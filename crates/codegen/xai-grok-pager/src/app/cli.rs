@@ -19,26 +19,24 @@ pub enum Command {
     Leader(LeaderMgmtArgs),
     /// Sign out and clear cached credentials
     Logout,
-    /// Sign in to Grok
-    Login {
-        /// Ignored (kept for backwards compatibility). OAuth2 is now the only auth method.
+    /// Show how to configure an API provider (WeepCode renamed `login` —
+    /// there is no sign-in, only provider configuration)
+    #[command(alias = "login")]
+    Config {
+        /// Ignored (kept for backwards compatibility). OAuth2 is gone.
         #[arg(long, hide = true)]
         legacy: bool,
-        /// Use Grok OAuth via auth.x.ai.
+        /// Ignored (kept for backwards compatibility).
         #[arg(long = "oauth", alias = "oidc", conflicts_with_all = ["device_auth"])]
         oauth: bool,
-        /// Use device-code authentication for headless/remote environments.
+        /// Ignored (kept for backwards compatibility).
         #[arg(
             long = "device-auth",
             visible_alias = "device-code",
             conflicts_with_all = ["oauth"]
         )]
         device_auth: bool,
-        /// Authenticate for remote development environments (hidden).
-        ///
-        /// Field is always present so match arms stay feature-unification-safe
-        /// across Bazel/cargo graphs; clap only registers `--devbox` when
-        /// `devbox-login` is enabled (`arg(skip)` otherwise → always false).
+        /// Ignored (kept for backwards compatibility).
         #[arg(skip)]
         devbox: bool,
     },

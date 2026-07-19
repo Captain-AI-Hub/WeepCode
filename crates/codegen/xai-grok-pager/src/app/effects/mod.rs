@@ -1988,6 +1988,7 @@ pub(crate) fn execute(
             api_key,
             model_id,
             display_name,
+            context_window,
         } => {
             let tx = acp_tx.clone();
             tasks.spawn(async move {
@@ -1997,6 +1998,7 @@ pub(crate) fn execute(
                     "api_key": api_key,
                     "model_id": model_id,
                     "display_name": display_name,
+                    "context_window": context_window,
                 });
                 let req = acp::ExtRequest::new(
                     "weepcode/provider/save",

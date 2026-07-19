@@ -325,6 +325,7 @@ pub(super) fn dispatch_provider_setup_submit(app: &mut AppView) -> Vec<Effect> {
         api_key: form.api_key.trim().to_string(),
         model_id: form.model_id.trim().to_string(),
         display_name: form.display_name.trim().to_string(),
+        context_window: form.max_context_tokens(),
     }]
 }
 

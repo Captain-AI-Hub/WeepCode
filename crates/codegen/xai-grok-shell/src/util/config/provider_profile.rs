@@ -57,6 +57,8 @@ pub struct ProviderProfileInput {
     pub api_key: String,
     pub model_id: String,
     pub display_name: String,
+    /// Max context window in tokens; `None` keeps the resolver default.
+    pub context_window: Option<u64>,
 }
 
 impl ProviderProfileInput {
@@ -64,7 +66,7 @@ impl ProviderProfileInput {
     ///
     /// `base_url` must be an absolute http(s) URL; the trailing slash is
     /// stripped so the sampler's `{base}/chat/completions`-style joins stay
-    /// clean.
+    /// clean. `context_window` must be positive when present.
     pub fn validated(self) -> Result<Self, String> {
         let trimmed = Self {
             format: self.format,
@@ -72,6 +74,7 @@ impl ProviderProfileInput {
             api_key: self.api_key.trim().to_string(),
             model_id: self.model_id.trim().to_string(),
             display_name: self.display_name.trim().to_string(),
+            context_window: self.context_window,
         };
         if trimmed.base_url.is_empty() {
             return Err("base_url is required".to_string());
@@ -88,6 +91,9 @@ impl ProviderProfileInput {
         }
         if trimmed.display_name.is_empty() {
             return Err("display_name is required".to_string());
+        }
+        if matches!(trimmed.context_window, Some(0)) {
+            return Err("context_window must be positive".to_string());
         }
         Ok(trimmed)
     }
@@ -129,6 +135,12 @@ fn provider_profile_table(profile: &ProviderProfileInput) -> TomlValue {
         "api_backend".to_string(),
         TomlValue::String(profile.format.api_backend().to_string()),
     );
+    if let Some(context_window) = profile.context_window {
+        table.insert(
+            "context_window".to_string(),
+            TomlValue::Integer(context_window as i64),
+        );
+    }
     if profile.format == ProviderApiFormat::Anthropic {
         table.insert("auth_scheme".to_string(), TomlValue::String("x_api_key".to_string()));
         let mut headers = TomlMap::new();
@@ -220,6 +232,7 @@ mod tests {
             api_key: "sk-test".to_string(),
             model_id: "gpt-5".to_string(),
             display_name: "My OpenAI".to_string(),
+            context_window: None,
         }
     }
 
@@ -312,6 +325,42 @@ mod tests {
     }
 
     #[test]
+    fn upsert_writes_context_window_when_present() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("config.toml");
+        let input = ProviderProfileInput {
+            context_window: Some(128_000),
+            ..sample_input(ProviderApiFormat::OpenAiCompatible)
+        };
+        let slug = upsert_provider_profile_at(&path, &input).unwrap();
+        let parsed: TomlValue =
+            toml::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+        assert_eq!(
+            parsed["model"][&slug]["context_window"].as_integer(),
+            Some(128_000)
+        );
+
+        // Absent → field omitted, resolver default (200k) applies instead.
+        let dir2 = tempfile::tempdir().unwrap();
+        let path2 = dir2.path().join("config.toml");
+        let slug2 =
+            upsert_provider_profile_at(&path2, &sample_input(ProviderApiFormat::OpenAiCompatible))
+                .unwrap();
+        let parsed2: TomlValue =
+            toml::from_str(&std::fs::read_to_string(&path2).unwrap()).unwrap();
+        assert!(parsed2["model"][&slug2].get("context_window").is_none());
+    }
+
+    #[test]
+    fn validation_rejects_zero_context_window() {
+        let input = ProviderProfileInput {
+            context_window: Some(0),
+            ..sample_input(ProviderApiFormat::OpenAiResponses)
+        };
+        assert!(input.validated().is_err());
+    }
+
+    #[test]
     fn upsert_anthropic_maps_backend_and_headers() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("config.toml");
@@ -321,6 +370,7 @@ mod tests {
             model_id: "claude-sonnet-4-5".to_string(),
             display_name: "Claude".to_string(),
             format: ProviderApiFormat::Anthropic,
+            context_window: None,
         };
         let slug = upsert_provider_profile_at(&path, &input).unwrap();
         let parsed: TomlValue =

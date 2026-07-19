@@ -1877,7 +1877,7 @@ async fn async_main() -> Result<()> {
                 )
                 .await;
             }
-            Command::Login {
+            Command::Config {
                 legacy: _,
                 oauth: _,
                 device_auth: _,
@@ -1887,10 +1887,10 @@ async fn async_main() -> Result<()> {
                 // WeepCode: xAI OAuth login is gone. `login` prints the
                 // provider-setup path instead of starting a browser flow.
                 println!(
-                    "WeepCode uses API providers instead of xAI sign-in.\n\
+                    "Configure an API provider for WeepCode.\n\
                      \n\
                      Option 1 — interactive setup:\n\
-                     \x20 Run `grok` and complete \"Configure API Provider\" on the welcome screen.\n\
+                     \x20 Run `weepcode` and complete \"Configure API Provider\" on the welcome screen.\n\
                      \n\
                      Option 2 — edit ~/.grok/config.toml directly:\n\
                      \n\
@@ -1900,6 +1900,7 @@ async fn async_main() -> Result<()> {
                      \x20 base_url       = \"https://api.openai.com/v1\"\n\
                      \x20 api_key        = \"<your key>\"\n\
                      \x20 api_backend    = \"responses\"          # responses | chat_completions | messages\n\
+                     \x20 context_window = 200000               # optional, max tokens of context\n\
                      \n\
                      \x20 [models]\n\
                      \x20 default = \"my-provider\"\n\

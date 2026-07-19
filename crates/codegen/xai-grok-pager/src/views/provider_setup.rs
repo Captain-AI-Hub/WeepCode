@@ -43,7 +43,7 @@ pub const PROVIDER_FORMATS: [ProviderFormatSpec; 3] = [
     },
 ];
 
-/// The four text inputs, in tab order (the format selector sits above them).
+/// The five text inputs, in tab order (the format selector sits above them).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ProviderSetupField {
     Format,
@@ -51,15 +51,17 @@ pub enum ProviderSetupField {
     ApiKey,
     ModelId,
     DisplayName,
+    MaxContext,
 }
 
 impl ProviderSetupField {
-    pub const ALL: [ProviderSetupField; 5] = [
+    pub const ALL: [ProviderSetupField; 6] = [
         Self::Format,
         Self::BaseUrl,
         Self::ApiKey,
         Self::ModelId,
         Self::DisplayName,
+        Self::MaxContext,
     ];
 
     fn index(self) -> isize {
@@ -69,6 +71,7 @@ impl ProviderSetupField {
             Self::ApiKey => 2,
             Self::ModelId => 3,
             Self::DisplayName => 4,
+            Self::MaxContext => 5,
         }
     }
 
@@ -76,6 +79,10 @@ impl ProviderSetupField {
         Self::ALL[index.rem_euclid(Self::ALL.len() as isize) as usize]
     }
 }
+
+/// Default context window applied when the form field is left empty
+/// (mirrors the resolver default for new `[model.*]` entries).
+pub const DEFAULT_CONTEXT_WINDOW: u64 = 200_000;
 
 /// Outcome of feeding one key to the form; the caller maps it onto
 /// `InputOutcome` / `Action`.
@@ -96,6 +103,8 @@ pub struct ProviderSetupForm {
     pub api_key: String,
     pub model_id: String,
     pub display_name: String,
+    /// Max context window in tokens; empty means [`DEFAULT_CONTEXT_WINDOW`].
+    pub max_context: String,
     pub focused: ProviderSetupField,
     /// Last validation or save error, shown under the fields.
     pub error: Option<String>,
@@ -120,6 +129,7 @@ impl ProviderSetupForm {
             api_key: String::new(),
             model_id: String::new(),
             display_name: String::new(),
+            max_context: DEFAULT_CONTEXT_WINDOW.to_string(),
             focused: ProviderSetupField::Format,
             error: None,
             submitting: false,
@@ -131,6 +141,16 @@ impl ProviderSetupForm {
         &PROVIDER_FORMATS[self.format_index]
     }
 
+    /// Parsed max context window: the default when the field is blank.
+    pub fn max_context_tokens(&self) -> Option<u64> {
+        let trimmed = self.max_context.trim();
+        if trimmed.is_empty() {
+            Some(DEFAULT_CONTEXT_WINDOW)
+        } else {
+            trimmed.parse().ok()
+        }
+    }
+
     fn focused_text_mut(&mut self) -> Option<&mut String> {
         match self.focused {
             ProviderSetupField::Format => None,
@@ -138,6 +158,7 @@ impl ProviderSetupForm {
             ProviderSetupField::ApiKey => Some(&mut self.api_key),
             ProviderSetupField::ModelId => Some(&mut self.model_id),
             ProviderSetupField::DisplayName => Some(&mut self.display_name),
+            ProviderSetupField::MaxContext => Some(&mut self.max_context),
         }
     }
 
@@ -170,6 +191,9 @@ impl ProviderSetupForm {
         }
         if self.display_name.trim().is_empty() {
             return Err("Display name is required".to_string());
+        }
+        if self.max_context_tokens().is_none() {
+            return Err("Max context must be a positive number of tokens".to_string());
         }
         Ok(())
     }
@@ -230,6 +254,10 @@ impl ProviderSetupForm {
                 ProviderSetupOutcome::Changed
             }
             KeyCode::Char(c) => {
+                // Max context is numeric-only; other fields take any char.
+                if self.focused == ProviderSetupField::MaxContext && !c.is_ascii_digit() {
+                    return ProviderSetupOutcome::Unchanged;
+                }
                 if let Some(text) = self.focused_text_mut() {
                     text.push(c);
                 }
@@ -248,6 +276,11 @@ impl ProviderSetupForm {
             return ProviderSetupOutcome::Unchanged;
         }
         let cleaned: String = text.chars().filter(|c| *c != '\n' && *c != '\r').collect();
+        let cleaned = if self.focused == ProviderSetupField::MaxContext {
+            cleaned.chars().filter(|c| c.is_ascii_digit()).collect()
+        } else {
+            cleaned
+        };
         if let Some(field) = self.focused_text_mut() {
             field.push_str(&cleaned);
             if self.focused == ProviderSetupField::BaseUrl {
@@ -270,7 +303,7 @@ pub fn render_provider_setup_form(
 ) {
     let theme = Theme::current();
     let label_width = 14u16;
-    let rows = 5u16; // format + 4 text fields
+    let rows = 6u16; // format + 5 text fields
     let hints_height = 2u16;
     let error_height = if form.error.is_some() { 1u16 } else { 0u16 };
     let total = rows + hints_height + error_height + 2; // + title + spacing
@@ -335,7 +368,7 @@ pub fn render_provider_setup_form(
             format!("{}…{}", "•".repeat(value.len() - 4), &value[value.len() - 4..])
         }
     };
-    let text_rows: [(ProviderSetupField, &str, String); 4] = [
+    let text_rows: [(ProviderSetupField, &str, String); 5] = [
         (ProviderSetupField::BaseUrl, "Base URL", form.base_url.clone()),
         (ProviderSetupField::ApiKey, "API key", masked(&form.api_key)),
         (ProviderSetupField::ModelId, "Model id", form.model_id.clone()),
@@ -343,6 +376,11 @@ pub fn render_provider_setup_form(
             ProviderSetupField::DisplayName,
             "Display name",
             form.display_name.clone(),
+        ),
+        (
+            ProviderSetupField::MaxContext,
+            "Max context",
+            form.max_context.clone(),
         ),
     ];
     for (field, label, value) in text_rows {
@@ -414,7 +452,52 @@ mod tests {
         form.handle_key(&key(KeyCode::Tab));
         assert_eq!(form.focused, ProviderSetupField::DisplayName);
         form.handle_key(&key(KeyCode::Tab));
+        assert_eq!(form.focused, ProviderSetupField::MaxContext);
+        form.handle_key(&key(KeyCode::Tab));
         assert_eq!(form.focused, ProviderSetupField::Format);
+    }
+
+    #[test]
+    fn max_context_defaults_and_parses() {
+        let form = ProviderSetupForm::new();
+        assert_eq!(form.max_context_tokens(), Some(DEFAULT_CONTEXT_WINDOW));
+
+        let mut blank = ProviderSetupForm::new();
+        blank.max_context.clear();
+        assert_eq!(blank.max_context_tokens(), Some(DEFAULT_CONTEXT_WINDOW));
+
+        let mut custom = ProviderSetupForm::new();
+        custom.max_context = "128000".to_string();
+        assert_eq!(custom.max_context_tokens(), Some(128_000));
+
+        let mut garbage = ProviderSetupForm::new();
+        garbage.max_context = "12k".to_string();
+        assert_eq!(garbage.max_context_tokens(), None);
+        garbage.api_key = "sk".into();
+        garbage.model_id = "m".into();
+        garbage.display_name = "d".into();
+        assert_eq!(
+            garbage.handle_key(&key(KeyCode::Enter)),
+            ProviderSetupOutcome::Changed,
+            "invalid max context must block submit"
+        );
+        assert!(garbage.error.is_some());
+    }
+
+    #[test]
+    fn max_context_field_accepts_digits_only() {
+        let mut form = ProviderSetupForm::new();
+        form.focused = ProviderSetupField::MaxContext;
+        form.max_context.clear();
+        form.handle_key(&key(KeyCode::Char('1')));
+        form.handle_key(&key(KeyCode::Char('k')));
+        form.handle_key(&key(KeyCode::Char('0')));
+        assert_eq!(form.max_context, "10");
+        assert_eq!(
+            form.handle_paste("64000 tokens"),
+            ProviderSetupOutcome::Changed
+        );
+        assert_eq!(form.max_context, "1064000");
     }
 
     #[test]

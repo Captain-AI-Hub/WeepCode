@@ -1680,6 +1680,7 @@ pub enum Effect {
         api_key: String,
         model_id: String,
         display_name: String,
+        context_window: Option<u64>,
     },
     /// Fetch MCP server list from the shell (x.ai/mcp/list).
     FetchMcpsList {
