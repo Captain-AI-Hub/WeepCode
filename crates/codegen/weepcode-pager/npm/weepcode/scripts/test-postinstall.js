@@ -38,8 +38,9 @@ function cleanup(dir) {
 
 /** Semver-aware descending sort for "weepcode-X.Y.Z" filenames. */
 function semverSortDescending(a, b) {
-    const pa = a.slice(5).split('.').map(Number);
-    const pb = b.slice(5).split('.').map(Number);
+    const prefix = 'weepcode-';
+    const pa = a.slice(prefix.length).split('.').map(Number);
+    const pb = b.slice(prefix.length).split('.').map(Number);
     for (let i = 0; i < 3; i++) {
         if ((pa[i] || 0) !== (pb[i] || 0)) return (pb[i] || 0) - (pa[i] || 0);
     }
@@ -656,7 +657,7 @@ test('non-weepcode files in bin dir are not touched by cleanup', () => {
 // weepcode vs weepcode-pager Isolation Tests
 // ═══════════════════════════════════════════════════════════════════════
 
-console.log('\ngrok vs weepcode-pager isolation tests\n');
+console.log('\nweepcode vs weepcode-pager isolation tests\n');
 
 /**
  * Cleanup for a named binary (mirrors postinstall.js cleanupOldVersions).
@@ -912,9 +913,9 @@ test('Linux pager vendor files are not required for weepcode install', () => {
         assert.ok(!fs.existsSync(path.join(vendorBase, 'linux-arm64', 'weepcode-pager')));
 
         // weepcode install should succeed independently
-        const grokVendored = path.join(dir, 'vendored-weepcode');
-        fs.writeFileSync(grokVendored, 'weepcode-linux');
-        const result = installNamedBinary(grokVendored, 'weepcode', '0.1.150', binDir);
+        const weepcodeVendored = path.join(dir, 'vendored-weepcode');
+        fs.writeFileSync(weepcodeVendored, 'weepcode-linux');
+        const result = installNamedBinary(weepcodeVendored, 'weepcode', '0.1.150', binDir);
         assert.ok(fs.existsSync(result.versionedPath), 'weepcode should install without Linux pager');
     } finally {
         cleanup(dir);

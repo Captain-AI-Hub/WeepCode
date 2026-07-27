@@ -2873,13 +2873,11 @@ mod inline_auto_compact_flow_tests {
             SuppressReason::CreditBlock
         );
         assert_eq!(
-            classify(
-                "API error (status 402 Payment Required): WeepCode Build usage balance exhausted"
-            ),
+            classify("API error (status 402 Payment Required): WeepCode usage balance exhausted"),
             SuppressReason::CreditBlock
         );
         assert_eq!(
-            classify("WeepCode Build usage limit reached"),
+            classify("WeepCode usage limit reached"),
             SuppressReason::CreditBlock
         );
         assert_eq!(

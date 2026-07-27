@@ -22,7 +22,7 @@ pub const MAX_SKILL_WALK_DEPTH: usize = 5;
 ///
 /// `skills` is the standard layout (`.weepcode/skills/`, `.claude/skills/`,
 /// `.cursor/skills/`). The product-specific `skills-cursor/` layout is no
-/// longer scanned — it pulled vendor default skills into WeepCode Build sessions.
+/// longer scanned — it pulled vendor default skills into WeepCode sessions.
 const SKILL_SUBDIRS: &[&str] = &["skills"];
 
 /// Cursor ships these default skills in `~/.cursor/skills-cursor/`
@@ -815,7 +815,7 @@ pub fn parse_skill_files(skill_files: Vec<(PathBuf, SkillScope)>) -> Vec<SkillIn
 
     // Drop vendor-shipped default skills (vendor builtins) found under
     // a `/.cursor/` or `/.claude/` path. Always applied, independent of the
-    // per-vendor toggle, so vendor builtins never leak into WeepCode Build.
+    // per-vendor toggle, so vendor builtins never leak into WeepCode.
     skills.retain(|s| !is_vendor_default_skill(&s.path, &s.name));
 
     skills

@@ -3,7 +3,7 @@ license = "Apache-2.0"
 name = "weepcode-compaction"
 version = "0.1.0"
 edition.workspace = true
-description = "Shared, transport-agnostic compaction engine for WeepCode chat and WeepCode Build."
+description = "Shared, transport-agnostic compaction engine for WeepCode chat sessions."
 
 [dependencies]
 anyhow = { workspace = true }

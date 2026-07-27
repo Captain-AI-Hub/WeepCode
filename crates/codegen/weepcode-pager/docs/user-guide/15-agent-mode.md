@@ -115,21 +115,23 @@ Each update names its type, so a client can render distinct panels for reasoning
 
 ## Extension methods
 
-Beyond the base ACP protocol, WeepCode defines extension methods under the `x.ai/` prefix for SpaceXAI-specific functionality. These cover:
+Beyond the base ACP protocol, WeepCode defines extension methods under the `weepcode/` prefix. These cover:
 
 | Category                   | Prefix               | Examples                                         |
 | -------------------------- | -------------------- | ------------------------------------------------ |
-| **Filesystem**             | `x.ai/fs/*`          | `list`, `exists`, `read_file`, `write_file`      |
-| **Git**                    | `x.ai/git/*`         | `status`, `stage`, `commit`, `diffs`, `discard`  |
-| **Git Worktree**           | `x.ai/git/worktree/*`| `create`, `remove`, `apply`, `list`, `gc`        |
-| **Search**                 | `x.ai/search/*`      | `fuzzy/open`, `fuzzy/change`, `content`          |
-| **Terminal**               | `x.ai/terminal/*`    | `create`, `kill`, `output`, `wait_for_exit`      |
-| **Session Management**     | `x.ai/session/*`     | `fork`, `resolve_local_for_worktree_resume`      |
-| **Conversation & History** | `x.ai/*`             | `prompt_history`, `rewind/*`, `compact_conversation` |
-| **Authentication**         | `x.ai/auth/*`        | `get_url`, `submit_code`                         |
-| **Telemetry**              | `x.ai/telemetry/*` | session analytics events                         |
+| **Filesystem**             | `weepcode/fs/*`          | `list`, `exists`, `read_file`, `write_file`      |
+| **Git**                    | `weepcode/git/*`         | `status`, `stage`, `commit`, `diffs`, `discard`  |
+| **Git Worktree**           | `weepcode/git/worktree/*`| `create`, `remove`, `apply`, `list`, `gc`        |
+| **Search**                 | `weepcode/search/*`      | `fuzzy/open`, `fuzzy/change`, `content`          |
+| **Terminal**               | `weepcode/terminal/*`    | `create`, `kill`, `output`, `wait_for_exit`      |
+| **Session Management**     | `weepcode/session/*`     | `fork`, `resolve_local_for_worktree_resume`      |
+| **Conversation & History** | `weepcode/*`             | `prompt_history`, `rewind/*`, `compact_conversation` |
+| **Authentication**         | `weepcode/auth/*`        | `get_url`, `submit_code`                         |
+| **Telemetry**              | `weepcode/telemetry/*` | session analytics events                         |
 
-The tables here show representative methods in each category. The `x.ai/*` set is SpaceXAI-specific and may expand across releases, so treat it as non-exhaustive and discover the available methods from the agent's `initialize` response.
+The tables here show representative methods in each category. Treat the set as
+non-exhaustive and discover the available methods from the agent's `initialize`
+response.
 
 ### Notifications (agent to client)
 
@@ -137,13 +139,13 @@ The agent sends push notifications to clients for real-time updates:
 
 | Notification               | Description                          |
 | -------------------------- | ------------------------------------ |
-| `x.ai/search/fuzzy/status` | Fuzzy search results update          |
-| `x.ai/git/worktree/status` | Worktree creation progress           |
-| `x.ai/fs_notify`           | Filesystem change notification       |
-| `x.ai/fs/index`            | Full file index update               |
-| `x.ai/fs/index/delta`      | Incremental file index update        |
-| `x.ai/session_notification`| Session-specific updates (diff review, retry state, auto-compact) |
-| `x.ai/session/update`      | Session update (tool calls, content) |
+| `weepcode/search/fuzzy/status` | Fuzzy search results update          |
+| `weepcode/git/worktree/status` | Worktree creation progress           |
+| `weepcode/fs_notify`           | Filesystem change notification       |
+| `weepcode/fs/index`            | Full file index update               |
+| `weepcode/fs/index/delta`      | Incremental file index update        |
+| `weepcode/session_notification`| Session-specific updates (diff review, retry state, auto-compact) |
+| `weepcode/session/update`      | Session update (tool calls, content) |
 
 ---
 

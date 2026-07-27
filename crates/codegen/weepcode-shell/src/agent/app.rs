@@ -550,7 +550,7 @@ async fn run_headless_inner(
         anyhow::bail!("{HEADLESS_NO_SESSION}");
     };
 
-    // Capture the weepcode build URL for the first-connection callback
+    // Capture the WeepCode URL for the first-connection callback.
     let weepcode_code_url = format!("{}/build", ctx.weepcode_ws_origin);
 
     // Create first-connection callback for headless-specific behavior
@@ -559,7 +559,7 @@ async fn run_headless_inner(
             // Print to stderr (not logger) so user sees it
             eprintln!();
             eprintln!(
-                "Open WeepCode Build: {} (press Enter to open in browser)",
+                "Open WeepCode: {} (press Enter to open in browser)",
                 weepcode_code_url
             );
             eprintln!();

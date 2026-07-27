@@ -114,10 +114,24 @@ impl XaiProtoBuilder {
 
         // Can only process one input file when using --dependency_out=FILE.
         for proto in protos {
+            let tempfile = tempfile::TempDir::new()?;
+            let dependency_path = tempfile.path().join("dependencies.d");
+            let descriptor_set_path = tempfile.path().join("descriptor.pb");
+
             let mut command = Command::new(protoc.unwrap_or(Path::new("protoc")));
             command
-                .arg("--dependency_out=/dev/stdout")
-                .arg("--descriptor_set_out=/dev/null");
+                .arg(format!(
+                    "--dependency_out={}",
+                    dependency_path
+                        .to_str()
+                        .context("dependency output path not UTF-8")?
+                ))
+                .arg(format!(
+                    "--descriptor_set_out={}",
+                    descriptor_set_path
+                        .to_str()
+                        .context("descriptor output path not UTF-8")?
+                ));
 
             // Add protoc's well-known types include directory first (if found).
             // This is needed for Bazel sandboxed builds where protoc and its
@@ -143,15 +157,17 @@ impl XaiProtoBuilder {
                 return Err(anyhow::anyhow!("protoc command failed"));
             }
 
-            let output =
-                String::from_utf8(output.stdout).context("protoc command output not UTF-8")?;
+            let output = fs::read_to_string(&dependency_path).with_context(|| {
+                format!(
+                    "failed to read protoc dependency file {}",
+                    dependency_path.display()
+                )
+            })?;
 
             let mut lines = output.lines();
             let first_line = lines.next().context("protoc command output is empty")?;
-            let prefix = "/dev/null:";
-            let rem = first_line.strip_prefix(prefix).with_context(|| {
-                format!("protoc command output must start with /dev/null: {output:?}")
-            })?;
+            let rem = dependency_line_after_target(first_line)
+                .with_context(|| format!("protoc dependency output is malformed: {output:?}"))?;
             for line in iter::once(rem).chain(lines) {
                 let line = line.trim();
                 let line = line.strip_suffix("\\").unwrap_or(line);
@@ -274,6 +290,22 @@ impl XaiProtoBuilder {
     }
 }
 
+fn dependency_line_after_target(line: &str) -> Option<&str> {
+    let separator_index = line.char_indices().find_map(|(index, character)| {
+        if character != ':' {
+            return None;
+        }
+        let next = line[index + character.len_utf8()..].chars().next();
+        if next.is_none_or(char::is_whitespace) {
+            Some(index)
+        } else {
+            None
+        }
+    })?;
+
+    Some(line[separator_index + 1..].trim_start())
+}
+
 pub fn configure() -> XaiProtoBuilder {
     let builder = tonic_prost_build::configure()
         .compile_well_known_types(true)
@@ -286,5 +318,31 @@ pub fn configure() -> XaiProtoBuilder {
         pbjson_ignore_unknown_fields: false,
         pbjson_preserve_proto_field_names: false,
         file_descriptor_set_path: None,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::dependency_line_after_target;
+
+    #[test]
+    fn dependency_line_after_target_accepts_unix_target() {
+        assert_eq!(
+            dependency_line_after_target("/tmp/descriptor.pb: proto/tool.proto \\"),
+            Some("proto/tool.proto \\")
+        );
+    }
+
+    #[test]
+    fn dependency_line_after_target_accepts_windows_target() {
+        assert_eq!(
+            dependency_line_after_target(r"C:\Temp\descriptor.pb: proto\tool.proto \"),
+            Some(r"proto\tool.proto \")
+        );
+    }
+
+    #[test]
+    fn dependency_line_after_target_rejects_missing_separator() {
+        assert_eq!(dependency_line_after_target("descriptor.pb"), None);
     }
 }

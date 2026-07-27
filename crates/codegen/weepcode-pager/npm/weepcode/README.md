@@ -2,18 +2,12 @@
 
 Bring WeepCode into your terminal. Fast, flicker-free CLI built for plans, subagents, and parallel work.
 
-**[Homepage](https://x.ai/cli)** | **[Documentation](https://docs.x.ai/build/overview)**
-
 ## Install
 
-```bash
-curl -fsSL https://x.ai/cli/install.sh | bash
-```
-
-Or install with npm:
+Install from the configured npm registry:
 
 ```bash
-npm i -g @weepcode-official/weepcode
+npm i -g weepcode
 ```
 
 ## Get Started
@@ -26,22 +20,17 @@ weepcode
 weepcode -p "Explain this codebase"
 ```
 
-On first launch, WeepCode opens your browser to authenticate. For CI or headless environments, use an API key from [console.x.ai](https://console.x.ai):
+On first launch, WeepCode opens the provider setup form. For CI or headless
+environments, use an API key accepted by your configured provider:
 
 ```bash
-export WEEPCODE_API_KEY="weepcode-..."
+export WEEPCODE_API_KEY="sk-..."
 ```
 
 ## Update
 
 ```bash
-weepcode update
-```
-
-Or if installed via npm:
-
-```bash
-npm i -g @weepcode-official/weepcode@latest
+npm i -g weepcode@latest
 ```
 
 ## Supported Platforms
@@ -54,8 +43,10 @@ npm i -g @weepcode-official/weepcode@latest
 
 ## Documentation
 
-For full documentation including configuration, MCP servers, custom models, headless mode, agent mode, and more, visit [docs.x.ai/build/overview](https://docs.x.ai/build/overview).
+For full documentation including configuration, MCP servers, custom models,
+headless mode, agent mode, and more, see the user guide bundled with this
+repository.
 
 ## Feedback
 
-Run `/feedback` inside WeepCode to report issues or send feedback directly.
+Use the repository issue tracker or maintainer channel for feedback.

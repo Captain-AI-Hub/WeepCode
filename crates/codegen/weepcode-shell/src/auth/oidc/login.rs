@@ -158,7 +158,7 @@ fn callback_response(result: &CallbackResult) -> (StatusCode, Html<String>) {
     let (title, message) = match result {
         Ok(_) => (
             "Signed in",
-            "You can close this window and return to WeepCode Build.",
+            "You can close this window and return to WeepCode.",
         ),
         Err(_) => ("Access denied", "Close this window and try again."),
     };

@@ -1,6 +1,6 @@
 //! Shared URL-opening and scheme validation utilities.
 //!
-//! Extracted from the `OpenSupergrokUrl` dispatch handler so that any
+//! Extracted from the URL-opening dispatch handler so that any
 //! code path (keyboard navigation, mouse click, action dispatch) can
 //! open a link safely without duplicating platform-specific logic.
 

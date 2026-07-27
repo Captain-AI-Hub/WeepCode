@@ -6,7 +6,9 @@ WeepCode connects to custom model endpoints for alternative providers, self-host
 
 ## Default Models
 
-By default, WeepCode uses models hosted by SpaceXAI, and new sessions start with `weepcode-build`. Default models require no configuration. Authenticate with `weepcode login` or an API key, then start a session.
+WeepCode uses the default model configured in `~/.weepcode/config.toml`. On a
+fresh install, add a provider through the first-launch form or `weepcode
+add-model`, then start a session.
 
 List all available models:
 

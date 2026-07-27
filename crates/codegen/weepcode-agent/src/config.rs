@@ -385,7 +385,7 @@ fn plan_toolset() -> ToolServerConfig {
         behavior_preset: None,
     }
 }
-/// WeepCode Build + plan mode toolset.
+/// WeepCode + plan mode toolset.
 ///
 /// Extends the default `weepcode-build` toolset with plan mode tools:
 /// `enter_plan_mode`, `exit_plan_mode`, and `ask_user_question`.
@@ -456,7 +456,7 @@ fn orchestrator_toolset() -> ToolServerConfig {
         behavior_preset: None,
     }
 }
-/// WeepCode Build + plan mode toolset WITHOUT subagent tools.
+/// WeepCode + plan mode toolset WITHOUT subagent tools.
 ///
 /// Same as `weepcode_build_plan_toolset` but excludes `TaskTool`,
 /// `TaskOutputTool`, and `KillTaskTool`. Use this when the shell
@@ -486,7 +486,7 @@ fn weepcode_build_plan_no_subagents_toolset() -> ToolServerConfig {
         behavior_preset: None,
     }
 }
-/// Default WeepCode Build toolset + `ask_user_question`.
+/// Default WeepCode toolset + `ask_user_question`.
 ///
 /// Same as `default_weepcode_build_toolset` with the `AskUserQuestionTool` added,
 /// allowing the agent to ask structured questions without full plan mode.
@@ -1467,47 +1467,47 @@ impl AgentDefinition {
     pub fn default_weepcode_build() -> Self {
         Self::base(
             BuiltinAgentName::WeepcodeBuild,
-            "WeepCode Build agent for software engineering tasks.",
+            "WeepCode agent for software engineering tasks.",
         )
     }
-    /// WeepCode Build Concise agent definition — concise output format for SFT/RL.
+    /// WeepCode Concise agent definition — concise output format for SFT/RL.
     pub fn weepcode_build_concise() -> Self {
         Self {
             tool_config: weepcode_build_concise_toolset(),
             agents_md: false,
             ..Self::base(
                 BuiltinAgentName::WeepcodeBuildConcise,
-                "WeepCode Build agent with concise output format.",
+                "WeepCode agent with concise output format.",
             )
         }
     }
-    /// WeepCode Build agent with plan mode tools.
+    /// WeepCode agent with plan mode tools.
     pub fn weepcode_build_plan() -> Self {
         Self {
             tool_config: weepcode_build_plan_toolset(),
             ..Self::base(
                 BuiltinAgentName::WeepcodeBuildPlan,
-                "WeepCode Build agent with plan mode support.",
+                "WeepCode agent with plan mode support.",
             )
         }
     }
-    /// WeepCode Build + plan mode WITHOUT subagent tools.
+    /// WeepCode + plan mode WITHOUT subagent tools.
     pub fn weepcode_build_plan_no_subagents() -> Self {
         Self {
             tool_config: weepcode_build_plan_no_subagents_toolset(),
             ..Self::base(
                 BuiltinAgentName::WeepcodeBuildPlanNoSubagents,
-                "WeepCode Build agent with plan mode (no subagents).",
+                "WeepCode agent with plan mode (no subagents).",
             )
         }
     }
-    /// Default WeepCode Build agent with the `ask_user_question` tool.
+    /// Default WeepCode agent with the `ask_user_question` tool.
     pub fn weepcode_build_ask_user() -> Self {
         Self {
             tool_config: weepcode_build_ask_user_toolset(),
             ..Self::base(
                 BuiltinAgentName::WeepcodeBuildAskUser,
-                "WeepCode Build agent with ask-user-question tool.",
+                "WeepCode agent with ask-user-question tool.",
             )
         }
     }
@@ -1581,7 +1581,7 @@ impl AgentDefinition {
             )
         }
     }
-    /// WeepCode Build Orchestrator — GBL model with full WeepcodeBuild tools
+    /// WeepCode Orchestrator — GBL model with full WeepcodeBuild tools
     /// (skills, MCPs, plan mode) that delegates coding/exploration to
     /// subagents.
     ///

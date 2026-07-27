@@ -210,7 +210,7 @@ if (process.env.WEEPCODE_INSTALL_COMPLETIONS === '1' && !IS_WINDOWS) {
         const { spawnSync } = require('child_process');
         const completionsDir = path.join(os.homedir(), '.weepcode', 'completions');
         const bashPath = path.join(completionsDir, 'bash', 'weepcode.bash');
-        const zshPath = path.join(completionsDir, 'zsh', '_grok');
+        const zshPath = path.join(completionsDir, 'zsh', '_weepcode');
         fs.mkdirSync(path.dirname(bashPath), { recursive: true });
         fs.mkdirSync(path.dirname(zshPath), { recursive: true });
         const bashRes = spawnSync(WEEPCODE_PATH, ['completions', 'bash'], { encoding: 'utf8' });
@@ -221,5 +221,5 @@ if (process.env.WEEPCODE_INSTALL_COMPLETIONS === '1' && !IS_WINDOWS) {
     } catch {}
 } else if (!IS_WINDOWS) {
     console.log('Tip: weepcode completions bash > ~/.local/share/bash-completion/completions/weepcode');
-    console.log('     weepcode completions zsh  > ~/.zsh/completions/_grok');
+    console.log('     weepcode completions zsh  > ~/.zsh/completions/_weepcode');
 }

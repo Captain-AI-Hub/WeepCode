@@ -1,6 +1,6 @@
 # weepcode-pager
 
-Terminal UI (TUI) for WeepCode Build. Provides the interactive full-screen interface
+Terminal UI (TUI) for WeepCode. Provides the interactive full-screen interface
 including the scrollback view, prompt input, session management, and all modal
 dialogs.
 

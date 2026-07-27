@@ -1,7 +1,7 @@
 use toml::Value as TomlValue;
 
 /// Announcement entry received from cli-chat-proxy `/v1/settings`.
-/// Re-exported from `xai-grok-announcements` for backward compatibility.
+/// Re-exported from `weepcode-announcements` for compatibility.
 pub use weepcode_announcements::RemoteAnnouncement;
 
 // ---------------------------------------------------------------------------

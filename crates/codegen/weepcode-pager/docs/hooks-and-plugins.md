@@ -1,6 +1,6 @@
 # Hooks & Plugins Guide
 
-WeepCode Build supports **hooks** (event-driven shell commands) and **plugins** (bundles of skills, agents, hooks, and MCP servers). Both are managed through a unified modal interface.
+WeepCode supports **hooks** (event-driven shell commands) and **plugins** (bundles of skills, agents, hooks, and MCP servers). Both are managed through a unified modal interface.
 
 ## Opening the Modal
 

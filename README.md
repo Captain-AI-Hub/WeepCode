@@ -4,8 +4,8 @@
 命令、管理长任务——以交互式 TUI、headless 脚本模式，或经 Agent Client Protocol（ACP）
 嵌入编辑器的方式工作。
 
-本项目 fork 自 WeepCode 的 WeepCode Build，已移除 WeepCode 强制登录与全部 WeepCode 服务耦合，
-改造为**自带 Provider 的通用工具**：启动时配置一次 API Provider 即可永久使用。
+本项目作为 **WeepCode** 独立开发发布，已移除上游强制登录与专属服务耦合，
+是**自带 Provider 的通用工具**：启动时配置一次 API Provider 即可永久使用。
 
 ## 支持的 API 格式
 
@@ -68,14 +68,13 @@ cargo check -p weepcode-pager-bin              # 快速验证
 - `docs/rule.md` — 项目规则
 - `docs/process/` — 每日进度记录
 
-## 与上游（Grok Build）的差异
+## 独立开发状态
 
-- 无 xAI OAuth / grok.com 登录；Provider 设置取而代之
-- 无遥测上报、无自更新通道、无公告/付费门（无 xAI 凭证时全部不激活）
-- `x-grok-*` 等追踪头只发往一方端点，第三方 Provider 收不到
+- 无上游 OAuth 登录；Provider 设置取而代之
+- 无默认遥测上报、无自更新通道、无公告/付费门
+- 一方追踪头仅发往一方端点，第三方 Provider 收不到
 - Phase 5 已完成全量改名：crate `weepcode-*`、环境变量 `WEEPCODE_*`、
-  配置目录 `~/.weepcode`、ACP 方法名 `weepcode/*`；无兼容 shim，
-  旧 `GROK_*` 环境变量与 `~/.grok` 不再读取
+  配置目录 `~/.weepcode`、ACP 方法名 `weepcode/*`；无兼容 shim
 
 ## License
 

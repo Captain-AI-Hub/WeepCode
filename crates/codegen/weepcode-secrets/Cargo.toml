@@ -3,7 +3,7 @@ license = "Apache-2.0"
 edition.workspace = true
 name = "weepcode-secrets"
 version = "0.1.0"
-description = "Regex sanitizer for WeepCode Build outbound data (Sentry / Mixpanel / product-event scrubbing)"
+description = "Regex sanitizer for WeepCode outbound data and error-report scrubbing"
 
 [dependencies]
 regex = { workspace = true }

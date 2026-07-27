@@ -5,13 +5,13 @@
 
 ## 1. 项目概览
 
-WeepCode 是一个终端 AI 编码助手（TUI）， fork 自 WeepCode 的开源项目 **WeepCode Build**（`weepcode` CLI）。
-当前改造目标：去除 WeepCode 强制登录与 weepcode/WeepCode 服务耦合，改造为支持多 Provider（OpenAI Responses /
+WeepCode 是一个独立开发发布的终端 AI 编码助手（TUI）。
+当前改造目标：去除强制登录与上游专属服务耦合，改造为支持多 Provider（OpenAI Responses /
 OpenAI Compatible / Anthropic Messages）的通用 TUI 工具。
 
 - 语言：Rust（edition 2024，工具链由 `rust-toolchain.toml` 锁定）
-- 形态：Cargo workspace，约 80 个 crate，全部命名为 `weepcode-*` / `weepcode-*`（改名属后续阶段）
-- 唯一可发布二进制：`crates/codegen/weepcode-pager-bin`（现阶段产物名 `weepcode-pager`，Phase 4 改为 `weepcode`）
+- 形态：Cargo workspace，约 80 个 crate，全部命名为 `weepcode-*`
+- 唯一可发布二进制：`crates/codegen/weepcode-pager-bin`（产物名 `weepcode`）
 - 协议中枢：TUI 与 agent 运行时之间通过 **ACP（Agent Client Protocol）** 通信，headless / stdio / leader 模式复用同一套 ACP 机制
 
 ## 2. 分层架构
@@ -66,7 +66,7 @@ TUI 内部架构：`Action`（输入意图）→ `dispatch`（同步状态变更
 4. `run_turn_via_sampler`（sampler_turn.rs:860）→ `SamplerHandle::submit_and_collect`
 5. `weepcode-sampler` actor 发 HTTP SSE 请求；L2 流变换产出 `SamplingEvent`
 6. 工具调用：`execute_tool_calls`（turn.rs:2260）→ weepcode-tools；权限请求经 ACP 回 TUI
-7. 渲染：shell 发 ACP `SessionNotification` + `x.ai/*` 扩展 → `AcpUpdateTracker`（acp/tracker.rs）→ `RenderBlock` → ratatui
+7. 渲染：shell 发 ACP `SessionNotification` + `weepcode/*` 扩展 → `AcpUpdateTracker`（acp/tracker.rs）→ `RenderBlock` → ratatui
 
 关键类型：`MvpAgent`、`SessionActor`、`ConversationRequest/Response`、`SamplingEvent`、`AcpUpdateTracker`、`AppView/AgentView`、`Action/Effect/TaskResult`。
 
@@ -94,16 +94,16 @@ TUI 内部架构：`Action`（输入意图）→ `dispatch`（同步状态变更
 
 ## 6. 认证与强制登录现状
 
-真正实现位于 `weepcode-shell/src/auth/`（约 22k 行），而非名字唬人的 weepcode-auth（只是 DI 接缝）。
+真正实现位于 `weepcode-shell/src/auth/`，而非 `weepcode-auth`（只是 DI 接缝）。
 
-- **认证方式**：WeepCode OAuth 2.1 PKCE 浏览器回环、RFC 8628 设备码、企业 OIDC、外部 provider 命令、API Key（`WEEPCODE_API_KEY` 或 per-model BYOK）
+- **认证方式**：OAuth 2.1 PKCE 浏览器回环、RFC 8628 设备码、企业 OIDC、外部 provider 命令、API Key（`WEEPCODE_API_KEY` 或 per-model BYOK）
 - **存储**：`$WEEPCODE_HOME/auth.json`（默认 `~/.weepcode/auth.json`），纯 JSON + 0600，原子写入 + flock；无 keychain
 - **强制登录链路**：
-  1. shell 侧 `build_auth_methods`（agent/auth_method.rs:139）按序通告方法：`weepcode.api_key` → `cached_token` → `grok.com`/`oidc`
+  1. shell 侧 `build_auth_methods`（agent/auth_method.rs:139）按序通告方法：`weepcode.api_key` → `cached_token` → `oidc`
   2. pager 侧取首项计算 `needs_login`（acp/mod.rs:574），`eager_auth_or_login_fallback` 尝试免交互认证
   3. 失败 → 欢迎屏登录菜单（views/welcome/mod.rs:686-725），`session_startup_allowed` 结构性阻断会话
-  4. 服务端付费门 `enforce_weepcode_code_access`（mvp_agent/mod.rs:1767，仅对 WeepCode OAuth 用户生效）
-- **关键事实**：per-model BYOK（`[model.*]` 配 api_key）今天就能绕过 WeepCode 登录——但被 TUI 方法通告逻辑挡住入口。改造核心是把这条已存在的路径变成一等公民。
+  4. 历史服务端付费门 `enforce_weepcode_code_access` 已对非一方认证放行
+- **关键事实**：per-model BYOK（`[model.*]` 配 api_key）今天就能绕过一方登录；改造核心是把这条已存在的路径变成一等公民。
 
 ## 7. 配置与持久化现状
 
@@ -117,18 +117,18 @@ TUI 内部架构：`Action`（输入意图）→ `dispatch`（同步状态变更
 - 模型目录：`resolve_model_list`（agent/config.rs:3130）= 内置默认 → 远端预取（`{models_list_url}`，磁盘缓存 models_cache.json）→ `[model.*]` 覆盖 → 全局默认
 - TUI 选模型：`/model`、Ctrl+M picker、设置弹窗；CLI `-m`
 
-## 8. WeepCode 服务耦合点清单（Phase 3 处置对象）
+## 8. 上游服务耦合点清单（Phase 3 处置对象）
 
 | 耦合点 | 位置 | 处置 |
 |---|---|---|
-| 推理/辅助代理默认端点 `cli-chat-proxy.grok.com` | weepcode-env/src/lib.rs:22 | 自定义 provider 模式下弃用 |
-| 公共 API `api.x.ai/v1` | agent/config.rs:48 | 同上 |
-| OAuth issuer `auth.x.ai` / accounts.x.ai | auth/config.rs:134 | Phase 7e：默认 issuer/client_id/CORS/devbox 链路已删；常量仅作 `is_weepcode_auth` 分类字面量保留 |
+| 推理/辅助代理默认端点 | weepcode-env/src/lib.rs:22 | 自定义 provider 模式下弃用 |
+| 公共 API | agent/config.rs:48 | 同上 |
+| OAuth issuer / CORS | auth/config.rs:134 | Phase 7e：默认 issuer/client_id/CORS/devbox 链路已删；常量仅作 `is_weepcode_auth` 分类字面量保留 |
 | 模型目录远端预取 | agent/models.rs:1971 | 自定义 endpoint 时跳过（部分已有 `has_custom_endpoint` 门） |
-| 付费门 | mvp_agent/mod.rs:1767 | 非 WeepCode 认证已放行，保持 |
+| 付费门 | mvp_agent/mod.rs:1767 | 非一方认证已放行，保持 |
 | 遥测 OTLP（带身份头）/ sentry | weepcode-telemetry | 默认关闭 |
 | 公告 / 插件市场 | Layer 5 各 crate | 默认关闭或纯配置驱动 |
-| 每请求 `x-weepcode-*` 追踪头 | sampler client.rs:44-74 | 非 WeepCode 端点不发送 |
+| 每请求一方追踪头 | sampler client.rs:44-74 | 非一方端点不发送 |
 | `X-WeepCode-Token-Auth` 等代理专用头 | agent/config.rs:4681 | 已按 URL 限定，保持 |
 
 ## 9. 品牌面（Phase 4 已处置，2026-07-18）
@@ -137,8 +137,7 @@ TUI 内部架构：`Action`（输入意图）→ `dispatch`（同步状态变更
 - 欢迎屏徽标/文案、信任警告、登录标签、项目目录询问 ✅（braille logo 为纯图形，保留待用户决策）
 - 系统提示词 label 默认值 `"WeepCode"`；templates 已中性化 ✅
 - 窗口标题、退出提示 `weepcode --resume`、`/docs`、`/usage`、README ✅
-- crate 名 / 环境变量 `WEEPCODE_*`·`WEEPCODE_*` / 配置目录 `~/.weepcode` / ACP 线协议方法名 `x.ai/*`：
-  **保持不动**（兼容优先），全量改名属 Phase 5（见 codemap）
+- crate 名 / 环境变量 `WEEPCODE_*` / 配置目录 `~/.weepcode` / ACP 线协议方法名 `weepcode/*` 已统一。
 
 ## 10. 改造总方向（详见 docs/codemap.md）
 

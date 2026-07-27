@@ -435,16 +435,14 @@ Aliases: `/changelog`
 
 ### `/docs`
 
-Browse in-TUI How-to Guides, open online Build docs, or jump to a guide by title.
+Browse in-TUI How-to Guides or jump to a guide by title.
 
 ```
 /docs
-/docs web
 /docs Getting Started
 ```
 
 - Bare `/docs` (or `/docs how-to`) opens the How-to Guides picker
-- `/docs web` opens https://docs.x.ai/build/overview in the browser
 - `/docs <title>` opens a specific guide (case-insensitive title match)
 
 Aliases: `/howto`, `/guides`

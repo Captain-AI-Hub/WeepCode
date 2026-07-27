@@ -3,7 +3,7 @@ license = "Apache-2.0"
 name = "weepcode-telemetry"
 version = "0.1.0"
 edition.workspace = true
-description = "Telemetry engine: product events + Mixpanel emission + Sentry error reporting for WeepCode Build sessions"
+description = "Telemetry engine: product events, Sentry error reporting, and OpenTelemetry for WeepCode sessions"
 authors = ["WeepCode"]
 
 [features]

@@ -458,10 +458,11 @@ Key environment variables that affect headless mode:
 | `WEEPCODE_LOG_FILE`                | Path to a log file (used verbatim as the path; works in headless and TUI, honors `RUST_LOG`) |
 | `RUST_LOG`                     | Log level filter (e.g. `debug`). Headless logs to stderr.     |
 
-For CI environments without browser access, set `WEEPCODE_API_KEY` with an API key from [console.x.ai](https://console.x.ai):
+For CI environments without an interactive setup step, set `WEEPCODE_API_KEY`
+with an API key accepted by your configured provider:
 
 ```bash
-export WEEPCODE_API_KEY="weepcode-..."
+export WEEPCODE_API_KEY="sk-..."
 weepcode -p "Run the test suite" --yolo
 ```
 

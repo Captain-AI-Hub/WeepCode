@@ -1230,7 +1230,7 @@ mod tests {
             ("plan", plan),
         ] {
             assert!(
-                !prompt.contains("You are a WeepCode Build agent"),
+                !prompt.contains("You are a WeepCode agent"),
                 "{name} prompt should not duplicate base template identity"
             );
         }

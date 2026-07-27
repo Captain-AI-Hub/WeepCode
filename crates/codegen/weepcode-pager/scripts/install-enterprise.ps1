@@ -1,17 +1,16 @@
 #
-# WeepCode CLI installer (enterprise channel) for PowerShell — https://x.ai/cli/enterprise-install.ps1
+# WeepCode CLI installer (enterprise channel) for PowerShell.
 #
 # Standalone installer for the enterprise channel. Intentionally a full copy of
 # the install logic so changes to the stable installer cannot break enterprise.
 #
-# Auth: WEEPCODE_DEPLOYMENT_KEY env var (takes precedence) or ~/.weepcode/auth.json from `weepcode login`.
-# Env: WEEPCODE_BIN_DIR, WEEPCODE_PROXY_URL
+# Auth: WEEPCODE_DEPLOYMENT_KEY for managed deployments.
+# Env: WEEPCODE_CLI_DOWNLOAD_BASE_URL, WEEPCODE_CLI_DOWNLOAD_FALLBACK_URL,
+#      WEEPCODE_BIN_DIR, WEEPCODE_PROXY_URL
 #
 # Usage:
-#   irm https://x.ai/cli/enterprise-install.ps1 | iex                                       # latest enterprise
-#   & ([scriptblock]::Create((irm https://x.ai/cli/enterprise-install.ps1))) -Version 0.1.42 # specific version
-#   $env:WEEPCODE_VERSION="0.1.42"; irm https://x.ai/cli/enterprise-install.ps1 | iex           # specific version (alt)
-#   $env:WEEPCODE_DEPLOYMENT_KEY="<key>"; irm https://x.ai/cli/enterprise-install.ps1 | iex
+#   $env:WEEPCODE_CLI_DOWNLOAD_BASE_URL="https://downloads.example.com/weepcode"; .\install-enterprise.ps1
+#   $env:WEEPCODE_CLI_DOWNLOAD_BASE_URL="https://downloads.example.com/weepcode"; .\install-enterprise.ps1 0.1.42
 #
 
 param(
@@ -34,7 +33,7 @@ if (-not $Version -and $env:WEEPCODE_VERSION) {
 
 # This script is Windows-only. PS 5.1 has no Platform property and only runs on Windows.
 if ($PSVersionTable.Platform -and $PSVersionTable.Platform -ne 'Win32NT') {
-    Write-Error "This installer is for Windows. On macOS/Linux, use: curl -fsSL https://x.ai/cli/enterprise-install.sh | bash"
+    Write-Error "This installer is for Windows. On macOS/Linux, use install-enterprise.sh."
     exit 1
 }
 
@@ -113,16 +112,16 @@ if ($Version -and $Version -notmatch '^\d+\.\d+\.\d+(-\S+)?$') {
 
 # --- Resolve auth ---
 
-$OidcScope = 'https://auth.x.ai::b1a00492-073a-47ea-816f-4c329264a828'
-$LegacyScope = 'https://accounts.x.ai/sign-in'
+$OidcScope = $env:WEEPCODE_INSTALL_OIDC_SCOPE
+$LegacyScope = $env:WEEPCODE_INSTALL_LEGACY_SCOPE
 $AuthSource = ''
 
 if ($env:WEEPCODE_DEPLOYMENT_KEY) {
     $AuthSource = 'deployment key'
     Write-Host 'Auth: using deployment key.' -ForegroundColor DarkGray
 } else {
-    $oidcToken = Read-WeepCodeToken $OidcScope
-    $legacyToken = Read-WeepCodeToken $LegacyScope
+    $oidcToken = if ($OidcScope) { Read-WeepCodeToken $OidcScope } else { $null }
+    $legacyToken = if ($LegacyScope) { Read-WeepCodeToken $LegacyScope } else { $null }
     if ($oidcToken) {
         $AuthSource = 'auth.json (oidc)'
         Write-Host 'Auth: using OIDC token from ~/.weepcode/auth.json.' -ForegroundColor DarkGray
@@ -150,8 +149,8 @@ $platform = "windows-$arch"
 
 # --- Resolve version ---
 
-$BaseUrlPrimary = 'https://x.ai/cli'
-$BaseUrlFallback = 'https://storage.googleapis.com/weepcode-build-public-artifacts/cli'
+$BaseUrlPrimary = $env:WEEPCODE_CLI_DOWNLOAD_BASE_URL
+$BaseUrlFallback = $env:WEEPCODE_CLI_DOWNLOAD_FALLBACK_URL
 $DownloadDir = Join-Path $WeepCodeDir 'downloads'
 $BinDir = if ($env:WEEPCODE_BIN_DIR) { $env:WEEPCODE_BIN_DIR } else { Join-Path $WeepCodeDir 'bin' }
 
@@ -160,17 +159,26 @@ New-Item -ItemType Directory -Path $BinDir -Force | Out-Null
 
 $Channel = 'enterprise'
 
-# Pick a working BaseUrl: try Cloudflare-fronted x.ai first, fall back to
-# direct GCS if it's unreachable. The probe doubles as the channel-pointer
-# fetch when no -Version was passed, so the happy path costs zero extra requests.
+if (-not $BaseUrlPrimary) {
+    Write-Error 'Set WEEPCODE_CLI_DOWNLOAD_BASE_URL to your WeepCode artifact root.'
+    exit 1
+}
+
+# Pick a working BaseUrl: try primary, then optional fallback. The probe doubles
+# as the channel-pointer fetch when no -Version was passed, so the happy path
+# costs zero extra requests.
 if (-not $Version) { Write-Host "Fetching latest $Channel version..." -ForegroundColor DarkGray }
 $probeResult = Download-String "$BaseUrlPrimary/$Channel"
 if ($probeResult) {
     $BaseUrl = $BaseUrlPrimary
 } else {
-    Write-Host "Note: $BaseUrlPrimary unreachable, falling back to direct GCS." -ForegroundColor Yellow
-    $BaseUrl = $BaseUrlFallback
-    $probeResult = Download-String "$BaseUrl/$Channel"
+    if ($BaseUrlFallback) {
+        Write-Host "Note: $BaseUrlPrimary unreachable, falling back to $BaseUrlFallback." -ForegroundColor Yellow
+        $BaseUrl = $BaseUrlFallback
+        $probeResult = Download-String "$BaseUrl/$Channel"
+    } else {
+        $BaseUrl = $BaseUrlPrimary
+    }
 }
 
 if ($Version) {
@@ -178,7 +186,7 @@ if ($Version) {
 } elseif ($probeResult) {
     $resolvedVersion = $probeResult.Trim()
 } else {
-    Write-Error "Failed to fetch latest version from $BaseUrlPrimary/$Channel and $BaseUrlFallback/$Channel"
+    Write-Error "Failed to fetch latest version from $BaseUrlPrimary/$Channel"
     exit 1
 }
 
@@ -281,34 +289,43 @@ if (-not (Test-Path $ConfigFile)) {
 # --- Fetch deployment config (deployment key only) ---
 
 if ($env:WEEPCODE_DEPLOYMENT_KEY) {
-    $ProxyUrl = if ($env:WEEPCODE_PROXY_URL) { $env:WEEPCODE_PROXY_URL } else { 'https://cli-chat-proxy.grok.com/v1' }
-    Write-Host '  Fetching deployment config...' -ForegroundColor DarkGray
-    try {
-        $headers = @{ 'Authorization' = "Bearer $($env:WEEPCODE_DEPLOYMENT_KEY)" }
-        $deployResponse = Invoke-RestMethod -Uri "$ProxyUrl/deployment/config" -Headers $headers -UseBasicParsing
-    } catch {
-        Write-Host "  Warning: failed to fetch deployment config from $ProxyUrl/deployment/config" -ForegroundColor Yellow
-        $deployResponse = $null
-    }
-
-    if ($deployResponse) {
-        $managedConfig = $deployResponse.managed_config
-        $requirements = $deployResponse.requirements
-
-        $managedConfigPath = Join-Path $WeepCodeDir 'managed_config.toml'
-        $requirementsPath = Join-Path $WeepCodeDir 'requirements.toml'
-
-        if ($managedConfig -and $managedConfig -ne 'null') {
-            [System.IO.File]::WriteAllText($managedConfigPath, $managedConfig, [System.Text.Encoding]::UTF8)
-            Write-Host '  Managed config applied.' -ForegroundColor DarkGray
-        } else {
-            if (Test-Path $managedConfigPath) { Remove-Item $managedConfigPath -Force }
+    $ProxyUrl = $env:WEEPCODE_PROXY_URL
+    if (-not $ProxyUrl) {
+        Write-Host '  Skipping deployment config fetch; set WEEPCODE_PROXY_URL to enable it.' -ForegroundColor DarkGray
+    } else {
+        Write-Host '  Fetching deployment config...' -ForegroundColor DarkGray
+        try {
+            $headers = @{ 'Authorization' = "Bearer $($env:WEEPCODE_DEPLOYMENT_KEY)" }
+            $deployResponse = Invoke-RestMethod -Uri "$ProxyUrl/deployment/config" -Headers $headers -UseBasicParsing
+        } catch {
+            Write-Host "  Warning: failed to fetch deployment config from $ProxyUrl/deployment/config" -ForegroundColor Yellow
+            $deployResponse = $null
         }
 
-        if ($requirements -and $requirements -ne 'null') {
-            [System.IO.File]::WriteAllText($requirementsPath, $requirements, [System.Text.Encoding]::UTF8)
-            Write-Host '  Requirements applied.' -ForegroundColor DarkGray
+        if ($deployResponse) {
+            $managedConfig = $deployResponse.managed_config
+            $requirements = $deployResponse.requirements
+
+            $managedConfigPath = Join-Path $WeepCodeDir 'managed_config.toml'
+            $requirementsPath = Join-Path $WeepCodeDir 'requirements.toml'
+
+            if ($managedConfig -and $managedConfig -ne 'null') {
+                [System.IO.File]::WriteAllText($managedConfigPath, $managedConfig, [System.Text.Encoding]::UTF8)
+                Write-Host '  Managed config applied.' -ForegroundColor DarkGray
+            } else {
+                if (Test-Path $managedConfigPath) { Remove-Item $managedConfigPath -Force }
+            }
+
+            if ($requirements -and $requirements -ne 'null') {
+                [System.IO.File]::WriteAllText($requirementsPath, $requirements, [System.Text.Encoding]::UTF8)
+                Write-Host '  Requirements applied.' -ForegroundColor DarkGray
+            } else {
+                if (Test-Path $requirementsPath) { Remove-Item $requirementsPath -Force }
+            }
         } else {
+            $managedConfigPath = Join-Path $WeepCodeDir 'managed_config.toml'
+            $requirementsPath = Join-Path $WeepCodeDir 'requirements.toml'
+            if (Test-Path $managedConfigPath) { Remove-Item $managedConfigPath -Force }
             if (Test-Path $requirementsPath) { Remove-Item $requirementsPath -Force }
         }
     }

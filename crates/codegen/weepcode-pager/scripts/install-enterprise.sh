@@ -1,18 +1,18 @@
 #!/bin/bash
 #
-# WeepCode CLI installer (enterprise channel) — https://x.ai/cli/enterprise-install.sh
+# WeepCode CLI installer (enterprise channel).
 #
 # Standalone installer for the enterprise channel. This is intentionally a full
 # copy of the install logic (not a wrapper around install.sh) so that changes to
 # the stable installer cannot accidentally break enterprise deployments.
 #
-# Auth: WEEPCODE_DEPLOYMENT_KEY (takes precedence) or ~/.weepcode/auth.json from `weepcode login`.
-# Env: WEEPCODE_BIN_DIR, WEEPCODE_PROXY_URL
+# Auth: WEEPCODE_DEPLOYMENT_KEY for managed deployments.
+# Env: WEEPCODE_CLI_DOWNLOAD_BASE_URL, WEEPCODE_CLI_DOWNLOAD_FALLBACK_URL,
+#      WEEPCODE_BIN_DIR, WEEPCODE_PROXY_URL
 #
 # Usage:
-#   curl -fsSL https://x.ai/cli/enterprise-install.sh | bash            # latest enterprise
-#   curl -fsSL https://x.ai/cli/enterprise-install.sh | bash -s 0.1.42  # specific version
-#   WEEPCODE_DEPLOYMENT_KEY=<key> bash <(curl -fsSL https://x.ai/cli/enterprise-install.sh)
+#   WEEPCODE_CLI_DOWNLOAD_BASE_URL=https://downloads.example.com/weepcode bash install-enterprise.sh
+#   WEEPCODE_CLI_DOWNLOAD_BASE_URL=https://downloads.example.com/weepcode bash install-enterprise.sh 0.1.42
 #
 # Windows: run under Git for Windows / MSYS2 Bash (same curl | bash flow); WSL
 # uses the Linux binary.
@@ -121,17 +121,19 @@ read_weepcode_token() {
     tr -d '\n' < "$auth_file" | sed -n 's|.*"'"$scope"'"[[:space:]]*:[[:space:]]*{[^}]*"key"[[:space:]]*:[[:space:]]*"\([^"]*\)".*|\1|p' | head -1
 }
 
-# Resolve auth: WEEPCODE_DEPLOYMENT_KEY > OIDC token > legacy token
-OIDC_SCOPE="https://auth.x.ai::b1a00492-073a-47ea-816f-4c329264a828"
-LEGACY_SCOPE="https://accounts.x.ai/sign-in"
+# Resolve auth: deployment key plus optional installer token scopes.
+OIDC_SCOPE="${WEEPCODE_INSTALL_OIDC_SCOPE:-}"
+LEGACY_SCOPE="${WEEPCODE_INSTALL_LEGACY_SCOPE:-}"
 AUTH_SOURCE=""
 
 if [ -n "$WEEPCODE_DEPLOYMENT_KEY" ]; then
     AUTH_SOURCE="deployment key"
     echo "Auth: using deployment key." >&2
 else
-    OIDC_TOKEN=$(read_weepcode_token "$OIDC_SCOPE" 2>/dev/null) || true
-    LEGACY_TOKEN=$(read_weepcode_token "$LEGACY_SCOPE" 2>/dev/null) || true
+    OIDC_TOKEN=""
+    LEGACY_TOKEN=""
+    [ -n "$OIDC_SCOPE" ] && OIDC_TOKEN=$(read_weepcode_token "$OIDC_SCOPE" 2>/dev/null) || true
+    [ -n "$LEGACY_SCOPE" ] && LEGACY_TOKEN=$(read_weepcode_token "$LEGACY_SCOPE" 2>/dev/null) || true
     if [ -n "$OIDC_TOKEN" ]; then
         AUTH_SOURCE="auth.json (oidc)"
         echo "Auth: using OIDC token from ~/.weepcode/auth.json." >&2
@@ -155,8 +157,8 @@ case "$(uname -m)" in
     *)                    echo "Unsupported architecture: $(uname -m)" >&2; exit 1 ;;
 esac
 
-BASE_URL_PRIMARY="https://x.ai/cli"
-BASE_URL_FALLBACK="https://storage.googleapis.com/weepcode-build-public-artifacts/cli"
+BASE_URL_PRIMARY="${WEEPCODE_CLI_DOWNLOAD_BASE_URL:-}"
+BASE_URL_FALLBACK="${WEEPCODE_CLI_DOWNLOAD_FALLBACK_URL:-}"
 DOWNLOAD_DIR="$HOME/.weepcode/downloads"
 BIN_DIR="${WEEPCODE_BIN_DIR:-$HOME/.weepcode/bin}"
 mkdir -p "$DOWNLOAD_DIR" "$BIN_DIR"
@@ -164,18 +166,24 @@ mkdir -p "$DOWNLOAD_DIR" "$BIN_DIR"
 platform="${os}-${arch}"
 CHANNEL="enterprise"
 
-# Pick a working BASE_URL: try Cloudflare-fronted x.ai first, fall back to
-# direct GCS if it's unreachable. The probe doubles as the channel-pointer
-# fetch when no explicit TARGET was passed, so the happy path costs zero
-# extra HTTP requests.
+if [ -z "$BASE_URL_PRIMARY" ]; then
+    echo "Error: set WEEPCODE_CLI_DOWNLOAD_BASE_URL to your WeepCode artifact root." >&2
+    exit 1
+fi
+
+# Pick a working BASE_URL: try primary, then optional fallback. The probe
+# doubles as the channel-pointer fetch when no explicit TARGET was passed, so
+# the happy path costs zero extra HTTP requests.
 if [ -z "$TARGET" ]; then echo "Fetching latest ${CHANNEL} version..." >&2; fi
 probe_result=$(download_file "${BASE_URL_PRIMARY}/${CHANNEL}" 2>/dev/null) || true
 if [ -n "$probe_result" ]; then
     BASE_URL="$BASE_URL_PRIMARY"
-else
-    echo "Note: ${BASE_URL_PRIMARY} unreachable, falling back to direct GCS." >&2
+elif [ -n "$BASE_URL_FALLBACK" ]; then
+    echo "Note: ${BASE_URL_PRIMARY} unreachable, falling back to ${BASE_URL_FALLBACK}." >&2
     BASE_URL="$BASE_URL_FALLBACK"
     probe_result=$(download_file "${BASE_URL}/${CHANNEL}" 2>/dev/null) || true
+else
+    BASE_URL="$BASE_URL_PRIMARY"
 fi
 
 if [ -n "$TARGET" ]; then
@@ -183,7 +191,7 @@ if [ -n "$TARGET" ]; then
 else
     version=$(printf '%s' "$probe_result" | tr -d '\r' | head -n1 | tr -d '[:space:]')
     if [ -z "$version" ]; then
-        echo "Error: failed to fetch latest version from ${BASE_URL_PRIMARY}/${CHANNEL} and ${BASE_URL_FALLBACK}/${CHANNEL}" >&2
+        echo "Error: failed to fetch latest version from ${BASE_URL_PRIMARY}/${CHANNEL}" >&2
         exit 1
     fi
 fi
@@ -255,7 +263,7 @@ fi
 # Generate shell completions (best-effort)
 mkdir -p "$HOME/.weepcode/completions/bash" "$HOME/.weepcode/completions/zsh"
 "$BIN_DIR/weepcode" completions bash > "$HOME/.weepcode/completions/bash/weepcode.bash" 2>/dev/null || true
-"$BIN_DIR/weepcode" completions zsh  > "$HOME/.weepcode/completions/zsh/_grok"     2>/dev/null || true
+"$BIN_DIR/weepcode" completions zsh  > "$HOME/.weepcode/completions/zsh/_weepcode" 2>/dev/null || true
 # Fish: write to the auto-loaded completions dir so it works immediately
 if mkdir -p "$HOME/.config/fish/completions" 2>/dev/null; then
     "$BIN_DIR/weepcode" completions fish > "$HOME/.config/fish/completions/weepcode.fish" 2>/dev/null || true
@@ -280,36 +288,39 @@ fi
 
 # Fetch managed_config.toml + requirements.toml from server (deployment key only).
 if [ -n "$WEEPCODE_DEPLOYMENT_KEY" ]; then
-    PROXY_URL="${WEEPCODE_PROXY_URL:-https://cli-chat-proxy.grok.com/v1}"
-    echo "  Fetching deployment config..." >&2
-    DEPLOY_RESPONSE=""
-    AUTH_HEADER_FILE=$(mktemp 2>/dev/null) || AUTH_HEADER_FILE=""
-    if [ -n "$AUTH_HEADER_FILE" ]; then
-        chmod 600 "$AUTH_HEADER_FILE" 2>/dev/null || true
-        printf 'Authorization: Bearer %s\n' "$WEEPCODE_DEPLOYMENT_KEY" > "$AUTH_HEADER_FILE"
-        DEPLOY_RESPONSE=$(curl -sS -f \
-            -H "@${AUTH_HEADER_FILE}" \
-            "${PROXY_URL}/deployment/config" 2>/dev/null) || DEPLOY_RESPONSE=""
-        : > "$AUTH_HEADER_FILE" 2>/dev/null || true
-        rm -f "$AUTH_HEADER_FILE"
-    fi
-    if [ -z "$DEPLOY_RESPONSE" ]; then
-        echo "  Warning: failed to fetch deployment config from ${PROXY_URL}/deployment/config" >&2
-    fi
-    if [ -n "$DEPLOY_RESPONSE" ]; then
-        MANAGED_CONFIG=$(json_get "$DEPLOY_RESPONSE" "managed_config")
-        REQUIREMENTS=$(json_get "$DEPLOY_RESPONSE" "requirements")
-        if [ -n "$MANAGED_CONFIG" ] && [ "$MANAGED_CONFIG" != "null" ]; then
-            printf '%s\n' "$MANAGED_CONFIG" > "$HOME/.weepcode/managed_config.toml"
-            echo "  Managed config applied." >&2
-        else
-            rm -f "$HOME/.weepcode/managed_config.toml"
+    PROXY_URL="${WEEPCODE_PROXY_URL:-}"
+    if [ -z "$PROXY_URL" ]; then
+        echo "  Skipping deployment config fetch; set WEEPCODE_PROXY_URL to enable it." >&2
+    else
+        echo "  Fetching deployment config..." >&2
+        DEPLOY_RESPONSE=""
+        AUTH_HEADER_FILE=$(mktemp 2>/dev/null) || AUTH_HEADER_FILE=""
+        if [ -n "$AUTH_HEADER_FILE" ]; then
+            chmod 600 "$AUTH_HEADER_FILE" 2>/dev/null || true
+            printf 'Authorization: Bearer %s\n' "$WEEPCODE_DEPLOYMENT_KEY" > "$AUTH_HEADER_FILE"
+            DEPLOY_RESPONSE=$(curl -sS -f \
+                -H "@${AUTH_HEADER_FILE}" \
+                "${PROXY_URL}/deployment/config" 2>/dev/null) || DEPLOY_RESPONSE=""
+            : > "$AUTH_HEADER_FILE" 2>/dev/null || true
+            rm -f "$AUTH_HEADER_FILE"
         fi
-        if [ -n "$REQUIREMENTS" ] && [ "$REQUIREMENTS" != "null" ]; then
-            printf '%s\n' "$REQUIREMENTS" > "$HOME/.weepcode/requirements.toml"
-            echo "  Requirements applied." >&2
+        if [ -z "$DEPLOY_RESPONSE" ]; then
+            echo "  Warning: failed to fetch deployment config from ${PROXY_URL}/deployment/config" >&2
         else
-            rm -f "$HOME/.weepcode/requirements.toml"
+            MANAGED_CONFIG=$(json_get "$DEPLOY_RESPONSE" "managed_config")
+            REQUIREMENTS=$(json_get "$DEPLOY_RESPONSE" "requirements")
+            if [ -n "$MANAGED_CONFIG" ] && [ "$MANAGED_CONFIG" != "null" ]; then
+                printf '%s\n' "$MANAGED_CONFIG" > "$HOME/.weepcode/managed_config.toml"
+                echo "  Managed config applied." >&2
+            else
+                rm -f "$HOME/.weepcode/managed_config.toml"
+            fi
+            if [ -n "$REQUIREMENTS" ] && [ "$REQUIREMENTS" != "null" ]; then
+                printf '%s\n' "$REQUIREMENTS" > "$HOME/.weepcode/requirements.toml"
+                echo "  Requirements applied." >&2
+            else
+                rm -f "$HOME/.weepcode/requirements.toml"
+            fi
         fi
     fi
 fi

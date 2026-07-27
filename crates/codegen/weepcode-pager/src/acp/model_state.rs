@@ -398,7 +398,7 @@ mod tests {
         let mut state = ModelState::default();
         state.available.insert(
             id.clone(),
-            model_with_effort("weepcode-build", "WeepCode Build", "high"),
+            model_with_effort("weepcode-build", "WeepCode Default", "high"),
         );
         state.set_current(id.clone(), Some(ReasoningEffort::Xhigh));
         assert_eq!(state.reasoning_effort, Some(ReasoningEffort::Xhigh));
@@ -407,7 +407,7 @@ mod tests {
         let mut refreshed = IndexMap::new();
         refreshed.insert(
             id.clone(),
-            model_with_effort("weepcode-build", "WeepCode Build", "high"),
+            model_with_effort("weepcode-build", "WeepCode Default", "high"),
         );
         state.update_catalog(refreshed, Some(id.clone()));
 

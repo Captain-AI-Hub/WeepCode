@@ -6,8 +6,7 @@
 
 WeepCode CLI can export usage **metrics** and **events** to your organization's
 own OpenTelemetry collector, so platform teams can monitor adoption, token
-consumption, tool-permission decisions, and errors across the fleet — without
-any data flowing through SpaceXAI.
+consumption, tool-permission decisions, and errors across the fleet.
 
 The external stream is:
 
@@ -16,12 +15,11 @@ The external stream is:
 - **Content-free by default**: no prompts, no code, no file paths (extension
   only), no tool arguments, no bash commands, and MCP/skill/plugin names
   collapsed to categories. Optional content gates re-enable some of these.
-- **Structurally separate** from SpaceXAI-internal telemetry: its exporters carry
-  only the headers you configure, never SpaceXAI credentials.
-- **Independent of SpaceXAI data-retention opt-outs**: it works even when
-  `telemetry` is disabled and for ZDR (zero-data-retention) teams — those
-  settings govern SpaceXAI-side retention; the external stream is governed solely
-  by your own OTEL configuration.
+- **Structurally separate** from product telemetry: its exporters carry only the
+  headers you configure, never provider credentials.
+- **Independent of provider data-retention settings**: it works even when
+  product telemetry is disabled; the external stream is governed solely by your
+  own OTEL configuration.
 
 ## Quick start
 
@@ -43,7 +41,7 @@ without the master switch.
 
 | Variable | Default | Meaning |
 |---|---|---|
-| `WEEPCODE_EXTERNAL_OTEL` | `0` | Master switch. Distinct from `WEEPCODE_TELEMETRY_ENABLED`, which controls SpaceXAI-internal product analytics — the two govern opposite-pointing data flows. |
+| `WEEPCODE_EXTERNAL_OTEL` | `0` | Master switch. Distinct from `WEEPCODE_TELEMETRY_ENABLED`, which controls product analytics — the two govern opposite-pointing data flows. |
 | `OTEL_METRICS_EXPORTER` | `none` | `otlp` \| `console` \| `none`. |
 | `OTEL_LOGS_EXPORTER` | `none` | `otlp` \| `console` \| `none`. Gates the event stream. |
 | `OTEL_EXPORTER_OTLP_PROTOCOL` | `http/protobuf` | `http/protobuf` \| `grpc`. |

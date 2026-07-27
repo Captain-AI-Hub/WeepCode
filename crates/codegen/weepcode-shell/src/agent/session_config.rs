@@ -125,7 +125,7 @@ mod tests {
     #[test]
     fn options_have_one_selected_model_and_a_mode_per_effort() {
         let models = [
-            model("weepcode-build", "WeepCode Build"),
+            model("weepcode-build", "WeepCode Default"),
             model("weepcode-4.5", "WeepCode 4.5"),
         ];
         let current = acp::ModelId::from("weepcode-build");
@@ -153,7 +153,7 @@ mod tests {
     #[test]
     fn none_effort_is_not_a_user_selectable_mode() {
         assert!(!SELECTABLE_REASONING_EFFORTS.contains(&ReasoningEffort::None));
-        let models = [model("weepcode-build", "WeepCode Build")];
+        let models = [model("weepcode-build", "WeepCode Default")];
         let current = acp::ModelId::from("weepcode-build");
         let opts = build_session_config_options(
             &models,
@@ -168,7 +168,7 @@ mod tests {
 
     #[test]
     fn no_mode_options_when_model_lacks_effort_support() {
-        let models = [model("weepcode-build", "WeepCode Build")];
+        let models = [model("weepcode-build", "WeepCode Default")];
         let current = acp::ModelId::from("weepcode-build");
         let opts = build_session_config_options(&models, &current, &[], None);
         assert_eq!(opts.len(), 1);
@@ -188,14 +188,14 @@ mod tests {
         let opt = SessionConfigOption {
             id: "weepcode-build".to_string(),
             category: "model".to_string(),
-            label: "WeepCode Build".to_string(),
+            label: "WeepCode Default".to_string(),
             description: None,
             selected: true,
         };
         let v = serde_json::to_value(&opt).expect("serialize");
         assert_eq!(v["id"], "weepcode-build");
         assert_eq!(v["category"], "model");
-        assert_eq!(v["label"], "WeepCode Build");
+        assert_eq!(v["label"], "WeepCode Default");
         assert_eq!(v["selected"], true);
         assert!(v.get("description").is_none());
     }

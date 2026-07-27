@@ -1,10 +1,10 @@
-//! Telemetry engine for WeepCode Build sessions: product events + Mixpanel emission +
+//! Telemetry engine for WeepCode sessions: product events +
 //! Sentry error reporting + OpenTelemetry tracing + structured unified log.
 //!
 //! Extracted from `weepcode-file-utils` per review feedback so telemetry has
 //! its own ownership boundary (see CODEOWNERS) and so downstream consumers
 //! that only want event tracking + inference metrics no longer pull in
-//! Mixpanel/HTTP/identity dependencies.
+//! unrelated HTTP/identity dependencies.
 
 mod appender;
 pub mod client;

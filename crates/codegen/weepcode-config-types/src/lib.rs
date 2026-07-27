@@ -273,7 +273,7 @@ pub struct RemoteSettings {
     pub dream_check_interval_secs: Option<u64>,
     #[serde(default)]
     pub writeback_enabled: Option<bool>,
-    /// OAuth2 provider issuer URL (e.g., "https://auth.x.ai"). When present
+    /// OAuth2 provider issuer URL (e.g., "https://login.example.com"). When present
     /// together with `oauth2_client_id`, the client uses OAuth2 authorization code
     /// flow. Controlled via remote settings for gradual rollout.
     #[serde(default)]
@@ -281,7 +281,7 @@ pub struct RemoteSettings {
     /// OAuth2 client_id for the CLI. Paired with `oauth2_issuer`.
     #[serde(default)]
     pub oauth2_client_id: Option<String>,
-    /// When `Some(true)`, enable weepcode's default OAuth2 (WeepCode auth.x.ai).
+    /// When `Some(true)`, enable WeepCode's default OAuth2 flow.
     /// Enterprise OIDC (user's own IdP via `oidc` config) always wins.
     /// Controlled via remote settings; `--oauth` CLI flag overrides.
     #[serde(default)]

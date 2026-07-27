@@ -1,6 +1,6 @@
 # Getting Started
 
-WeepCode is a terminal-based AI coding assistant from SpaceXAI. It runs as a TUI (Terminal User Interface) that understands your codebase, executes shell commands, edits files, searches the web, and manages tasks.
+WeepCode is a terminal-based AI coding assistant. It runs as a TUI (Terminal User Interface) that understands your codebase, executes shell commands, edits files, searches the web, and manages tasks.
 
 You can use it interactively as a full-screen TUI, run it headlessly for scripting and CI/CD, or integrate it into editors via the Agent Client Protocol (ACP).
 
@@ -8,45 +8,17 @@ You can use it interactively as a full-screen TUI, run it headlessly for scripti
 
 ## Installation
 
-Install the latest stable release (macOS, Linux, or Windows via Git Bash):
+Build from source while release packaging is being prepared:
 
 ```bash
-curl -fsSL https://x.ai/cli/install.sh | bash
+cargo build -p weepcode-pager-bin
 ```
-
-Install a specific version:
-
-```bash
-curl -fsSL https://x.ai/cli/install.sh | bash -s 0.1.42
-```
-
-On **Windows (PowerShell)**, use the native PowerShell installer:
-
-```powershell
-irm https://x.ai/cli/install.ps1 | iex
-```
-
-Install a specific version:
-
-```powershell
-$env:WEEPCODE_VERSION="0.1.42"; irm https://x.ai/cli/install.ps1 | iex
-```
-
-The PowerShell installer automatically adds `%USERPROFILE%\.weepcode\bin` to your User PATH. Alternatively, install via [Git for Windows](https://gitforwindows.org/) (Git Bash) or MSYS2 using the bash script above. WSL users get the Linux binary automatically.
 
 Verify the installation:
 
 ```bash
 weepcode --version
 ```
-
-Update to the latest version at any time:
-
-```bash
-weepcode update
-```
-
----
 
 ## First Launch
 
@@ -56,16 +28,12 @@ Start WeepCode by running:
 weepcode
 ```
 
-On first launch, WeepCode opens your browser to authenticate with grok.com. After you sign in, WeepCode stores your credentials in `~/.weepcode/auth.json`, where they persist across sessions. WeepCode refreshes your credentials automatically and prompts you to sign in again when they can no longer be renewed.
+On first launch, WeepCode opens the **Configure API Provider** form. Add a
+provider once and WeepCode stores it in `~/.weepcode/config.toml` for later
+sessions.
 
-If you prefer API key authentication (e.g., for CI/CD or environments without a browser), set the `WEEPCODE_API_KEY` environment variable instead:
-
-```bash
-export WEEPCODE_API_KEY="weepcode-..."
-weepcode
-```
-
-See [Authentication](02-authentication.md) for the full set of auth options including OIDC, external auth providers, and device code flow.
+See [Authentication](02-authentication.md) for provider setup, environment-only
+keys, OIDC, and external auth provider options.
 
 ---
 

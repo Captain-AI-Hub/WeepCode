@@ -1095,7 +1095,7 @@ pub struct PlanSubmit {
 }
 
 /// Which option the user chose in the project-directory picker (shown on the
-/// first prompt when WeepCode Build is launched from a non-project directory).
+/// first prompt when WeepCode is launched from a non-project directory).
 #[derive(Debug, Serialize, Clone, Copy, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum ProjectPickerOutcome {

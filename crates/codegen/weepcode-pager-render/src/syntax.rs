@@ -10,9 +10,9 @@ pub use weepcode_markdown::Syntect;
 
 use crate::theme::ThemeKind;
 
-static SYNTECT_GROKNIGHT: OnceLock<Syntect> = OnceLock::new();
+static SYNTECT_WEEPCODE_NIGHT: OnceLock<Syntect> = OnceLock::new();
 static SYNTECT_TOKYONIGHT: OnceLock<Syntect> = OnceLock::new();
-static SYNTECT_GROKDAY: OnceLock<Syntect> = OnceLock::new();
+static SYNTECT_WEEPCODE_DAY: OnceLock<Syntect> = OnceLock::new();
 
 /// Convert syntect style to ratatui foreground-only style, quantized for terminal color support.
 pub fn syntect_to_ratatui_fg(style: syntect::highlighting::Style) -> ratatui::style::Style {
@@ -69,11 +69,11 @@ pub fn get_syntect() -> &'static Syntect {
         ThemeKind::WeepcodeNight
         | ThemeKind::RosePineMoon
         | ThemeKind::OscuraMidnight
-        | ThemeKind::Auto => SYNTECT_GROKNIGHT
+        | ThemeKind::Auto => SYNTECT_WEEPCODE_NIGHT
             .get_or_init(|| Syntect::new(include_bytes!("../assets/weepcode-night.tmTheme"))),
         ThemeKind::TokyoNight => SYNTECT_TOKYONIGHT
             .get_or_init(|| Syntect::new(include_bytes!("../assets/tokyo-night.tmTheme"))),
-        ThemeKind::WeepcodeDay => SYNTECT_GROKDAY
+        ThemeKind::WeepcodeDay => SYNTECT_WEEPCODE_DAY
             .get_or_init(|| Syntect::new(include_bytes!("../assets/weepcode-day.tmTheme"))),
     }
 }

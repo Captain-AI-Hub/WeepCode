@@ -1,10 +1,10 @@
-//! Headless markdown analysis sharing WeepCode Build's exact `pulldown-cmark` config.
+//! Headless markdown analysis sharing WeepCode's exact `pulldown-cmark` config.
 //!
 //! This crate is intentionally lean -- it depends only on `pulldown-cmark` -- so it
 //! can be used without pulling in the terminal-rendering stack (syntect, ratatui,
 //! two-face). [`parser_options`] is the single source of truth for the parser
 //! feature set, shared with `weepcode-markdown` so analysis matches what WeepCode
-//! Build actually renders 1:1.
+//! actually renders 1:1.
 //!
 //! After parsing, WeepCode applies [`offset_events`]: only `~~…~~` is strikethrough.
 //! Single-tilde pairs (`~text~`) are demoted to literal `~` text so LLM output
@@ -13,7 +13,7 @@
 use pulldown_cmark::{CodeBlockKind, Event, HeadingLevel, Options, Parser, Tag, TagEnd};
 use std::ops::Range;
 
-/// The exact `pulldown-cmark` option set WeepCode Build uses to render markdown.
+/// The exact `pulldown-cmark` option set WeepCode uses to render markdown.
 ///
 /// With `ENABLE_STRIKETHROUGH`, pulldown treats both `~~…~~` and single-`~` pairs as
 /// strike. Callers must consume events via [`offset_events`] so only double-tilde
@@ -294,7 +294,7 @@ fn detect_malformed_tables(
     }
 }
 
-/// Parse `text` with WeepCode Build's options; count elements and flag structural issues.
+/// Parse `text` with WeepCode's options; count elements and flag structural issues.
 pub fn analyze(text: &str) -> MarkdownAnalysis {
     let mut stats = MarkdownStats::default();
     let mut issues = Vec::new();

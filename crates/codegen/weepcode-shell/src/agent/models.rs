@@ -1347,7 +1347,7 @@ impl ModelsCacheManager {
 ///
 /// Each entry is keyed by its `id` field (falling back to the `model` slug
 /// when `id` is absent). This lets A/B experiments that share the same
-/// routing slug (e.g. "Auto" and "WeepCode Build" both route to `weepcode-build`)
+/// routing slug (e.g. "Auto" and "WeepCode Default" both route to `weepcode-build`)
 /// coexist in the catalog without collision.
 fn build_prefetched_map(
     models: Vec<config::ModelEntryConfig>,
@@ -3203,7 +3203,7 @@ mod tests {
             make_entry_config_with_id(
                 Some("weepcode-build"),
                 "weepcode-build",
-                Some("WeepCode Build"),
+                Some("WeepCode Default"),
             ),
             make_entry_config_with_id(
                 Some("weepcode-composer-2.5-fast"),
@@ -3279,7 +3279,7 @@ mod tests {
         let entries = vec![make_entry_config_with_id(
             None,
             "weepcode-build",
-            Some("WeepCode Build"),
+            Some("WeepCode Default"),
         )];
         let map = build_prefetched_map(entries, None);
 

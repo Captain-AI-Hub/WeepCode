@@ -644,7 +644,7 @@ mod tests {
     use std::collections::HashMap;
     use weepcode_tools::types::template_renderer::TemplateRenderer;
     use weepcode_tools::types::tool::ToolKind;
-    /// Build a test TemplateRenderer with standard WeepCode Build tool mappings.
+    /// Build a test TemplateRenderer with standard WeepCode tool mappings.
     fn test_renderer() -> TemplateRenderer {
         let tools: HashMap<ToolKind, String> = [
             (ToolKind::Edit, "search_replace".to_owned()),

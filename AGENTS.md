@@ -4,7 +4,7 @@
 
 ## 这是什么
 
-WeepCode：终端 AI 编码助手（Rust TUI），fork 自 WeepCode WeepCode Build，正在改造为支持
+WeepCode：独立开发发布的终端 AI 编码助手（Rust TUI），支持
 OpenAI Responses / OpenAI Compatible / Anthropic Messages 三种 API 格式的通用工具。
 架构细节见 `docs/project.md`。
 
@@ -31,7 +31,7 @@ cargo run -p weepcode-pager-bin          # 构建并启动 TUI（产物 target/d
 
 注意：包名为 `weepcode-pager-bin`，二进制产物名为 `weepcode`（Phase 5 已完成全量改名：
 crate `weepcode-*`、env `WEEPCODE_*`、配置目录 `~/.weepcode`、ACP 方法名 `weepcode/*`；
-无兼容 shim，旧 `GROK_*` 与 `~/.grok` 不再读取）。
+无兼容 shim）。
 
 ## 工作流纪律
 
@@ -43,6 +43,4 @@ crate `weepcode-*`、env `WEEPCODE_*`、配置目录 `~/.weepcode`、ACP 方法�
 
 ## 当前阶段提示
 
-crate 名（`weepcode-*`）、环境变量（`WEEPCODE_*`/`WEEPCODE_*`）、配置目录（`~/.weepcode`）在本阶段**保持不变**，
-只在 Phase 4 改用户可见品牌（CLI 名、界面文案、系统提示词 label）。全量改名属后续阶段，
-未经 codemap 排期不得提前动手。
+当前阶段以 `docs/codemap.md` 为准；改架构、配置、命令或 CI 时必须同步文档与当天进度。

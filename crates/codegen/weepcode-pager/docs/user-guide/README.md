@@ -1,6 +1,6 @@
 # WeepCode User Guide
 
-Learn how to install, configure, and extend WeepCode, the terminal-based AI coding assistant from SpaceXAI.
+Learn how to install, configure, and extend WeepCode, the terminal-based AI coding assistant.
 
 ---
 

@@ -62,7 +62,7 @@ cd /Users/alice/Documents/code/project && DYLD_INSERT_LIBRARIES=/opt/homebrew/op
 ! kubectl --context kind-local -n example-system get secret example-db-password -o jsonpath='{.data.EXAMPLE_DB_PASSWORD}' | base64 -d
 ### END
 ### CMD 18
-curl -fsSL x.ai/cli/install.sh | grep jq
+curl -fsSL example.com/cli/install.sh | grep jq
 ### END
 ### CMD 19
 curl -LsSf "http://file-server.example.internal/cicd/example/install.sh?nocache" | bash

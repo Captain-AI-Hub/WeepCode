@@ -7,8 +7,8 @@ Use it interactively as a TUI, or integrate it into your own apps via headless m
 ## Quick Start
 
 ```bash
-# Install
-curl -fsSL https://x.ai/cli/install.sh | bash
+# Build from source
+cargo build -p weepcode-pager-bin
 
 # Interactive TUI
 weepcode
@@ -23,7 +23,7 @@ weepcode agent stdio
 ## Contents
 
 - [Installation](#installation)
-- [Authentication](#authentication) — browser login, API key, OIDC, external auth providers
+- [Authentication](#authentication) — provider setup, API key, OIDC, external auth providers
 - **Using WeepCode**
   - [Interactive TUI](#interactive-tui) — shortcuts, slash commands, file references
   - [Headless Mode](#headless-mode) — scripting, CI/CD, output formats
@@ -57,12 +57,10 @@ weepcode agent stdio
 
 ## Installation
 
-```bash
-# Install latest stable
-curl -fsSL https://x.ai/cli/install.sh | bash
+Build the CLI from this workspace while release packaging is being prepared:
 
-# Install a specific version
-curl -fsSL https://x.ai/cli/install.sh | bash -s 0.1.42
+```bash
+cargo build -p weepcode-pager-bin
 ```
 
 Verify installation:
@@ -71,48 +69,43 @@ Verify installation:
 weepcode --version
 ```
 
-Update to the latest version:
-
-```bash
-weepcode update
-```
-
----
-
 ## Authentication
 
-### Browser Login (Default)
+### Provider Setup (Default)
 
-On first launch, WeepCode opens your browser to authenticate with grok.com:
+On first launch, WeepCode opens the provider setup form:
 
 ```bash
 weepcode
 ```
 
-Credentials are stored in `~/.weepcode/auth.json` and persist across sessions. Tokens expire after 7 days; WeepCode will prompt you to re-authenticate when needed.
+Provider settings are stored in `~/.weepcode/config.toml` and persist across
+sessions.
 
-### Re-authenticate
+### Add or Change a Provider
 
-To switch accounts or fix authentication issues:
+To add or change provider settings:
 
 ```bash
-weepcode login
+weepcode add-model
 ```
 
 ### API Key
 
-For CI/CD, automation, or environments without browser access, use an API key from [console.x.ai](https://console.x.ai):
+For CI/CD, automation, or environments without an interactive setup step, use an
+API key accepted by your configured provider:
 
 ```bash
-export WEEPCODE_API_KEY="weepcode-..."
+export WEEPCODE_API_KEY="sk-..."
 weepcode
 ```
 
-The API key takes precedence over browser credentials.
+The API key is used as a fallback credential when a configured model does not
+set `api_key` or `env_key`.
 
 ### OIDC (Customer SSO)
 
-Authenticate developers via your own Identity Provider (Okta, Azure AD, Auth0) instead of `accounts.x.ai`.
+Authenticate developers via your own Identity Provider (Okta, Azure AD, Auth0).
 
 **1. Register a public client in your IdP:**
 - Grant type: Authorization Code with PKCE
@@ -234,7 +227,7 @@ If your binary outputs a bare token string (not JSON with `expires_in`), set `au
 
 The command is run via `sh -c`, so it can be a binary path, a shell script, or a pipeline.
 
-When `auth_provider_label` is set, the TUI welcome screen shows **"Login with Acme Corp"** instead of "Login with grok.com". In headless mode (`weepcode -p`), the label has no effect — stderr from your binary is printed directly to the terminal.
+When `auth_provider_label` is set, the TUI welcome screen shows **"Login with Acme Corp"** for the external provider. In headless mode (`weepcode -p`), the label has no effect — stderr from your binary is printed directly to the terminal.
 
 > **Enterprise setup:** For a complete enterprise `config.toml` combining external auth, corporate proxy, and telemetry settings, see [Enterprise Deployment](#enterprise-deployment) in the Configuration section.
 
@@ -336,16 +329,15 @@ Common log messages:
 
 ### Using auth.json for API Access
 
-If you've authenticated with `weepcode login`, you can use the stored credentials to call the CLI chat proxy directly via curl. The proxy requires specific headers that mirror what the weepcode CLI sends internally:
+You can call any OpenAI-compatible provider directly with the same key and model
+that you configure for WeepCode:
 
 ```bash
-curl -s -N -X POST "https://cli-chat-proxy.grok.com/v1/chat/completions" \
+curl -s -N -X POST "https://api.example.com/v1/chat/completions" \
   -H "Content-Type: application/json" \
-  -H "Authorization: Bearer $(jq -r '."https://accounts.x.ai/sign-in".key' ~/.weepcode/auth.json)" \
-  -H "X-WeepCode-Token-Auth: weepcode-cli" \
-  -H "x-weepcode-model-override: weepcode-build" \
+  -H "Authorization: Bearer $WEEPCODE_API_KEY" \
   -d '{
-    "model": "weepcode-build",
+    "model": "your-model",
     "messages": [{"role": "user", "content": "Hello!"}],
     "stream": true
   }'
@@ -1306,7 +1298,7 @@ output_byte_limit = 65536              # max output size (64KB)
 
 [toolset.web_fetch]
 proxy_endpoint = "https://proxy.example.com"   # egress proxy URL (all requests routed through it)
-allowed_domains = ["docs.rs", "x.ai"]           # override the built-in ~84-domain allowlist
+allowed_domains = ["docs.rs", "example.com"]    # override the built-in allowlist
 
 [shortcuts]
 send = ["Enter"]
@@ -1447,7 +1439,7 @@ default = "company-weepcode"
 [model.company-weepcode]
 model = "weepcode-build"
 base_url = "https://weepcode-proxy.acme.com/"
-name = "WeepCode Build Latest (Proxy)"
+name = "Company Model (Proxy)"
 context_window = 256000
 
 [features]
@@ -2269,7 +2261,7 @@ disallowedTools:
 
 Fetch a specific URL and return its content as markdown. **Disabled by default** — enable with `WEEPCODE_WEB_FETCH=1`. 
 
-When no custom `allowed_domains` is set, the tool permits a default allowlist of useful documentation sites (SpaceXAI, language docs, frameworks, cloud providers, databases, etc.). Domains not on the allowlist prompt the user for approval; `--always-approve` auto-approves all. Domain matching is case-insensitive, strips `www.` prefixes, and supports path-scoped entries (e.g. `x.ai/company`).
+When no custom `allowed_domains` is set, the tool permits a default allowlist of useful documentation sites (language docs, frameworks, cloud providers, databases, etc.). Domains not on the allowlist prompt the user for approval; `--always-approve` auto-approves all. Domain matching is case-insensitive, strips `www.` prefixes, and supports path-scoped entries (e.g. `example.com/docs`).
 
 ---
 
@@ -2381,8 +2373,8 @@ The agent persists all session updates automatically. Clients can reconnect and 
 
 | Variable                         | Description                                                                                              |
 | -------------------------------- | -------------------------------------------------------------------------------------------------------- |
-| `WEEPCODE_API_KEY`         | API key from [console.x.ai](https://console.x.ai). Used for custom endpoint auth and API key login      |
-| `WEEPCODE_CLI_CHAT_PROXY_BASE_URL`  | Override the cli-chat-proxy URL (default: `https://cli-chat-proxy.grok.com/v1`)                          |
+| `WEEPCODE_API_KEY`         | Fallback API key for the configured provider      |
+| `WEEPCODE_CLI_CHAT_PROXY_BASE_URL`  | Override the legacy proxy URL for deployments that still use it                          |
 | `WEEPCODE_MODELS_BASE_URL`          | Custom base URL for inference. Model list auto-fetched from `{base_url}/models` (see [Custom Models Endpoint](#custom-models-endpoint)) |
 | `WEEPCODE_MODELS_LIST_URL`          | Override the model list URL if it differs from `{WEEPCODE_MODELS_BASE_URL}/models`                                              |
 | `WEEPCODE_AUTH_PROVIDER_COMMAND`     | External auth binary (alternative to config file). See [External Auth Provider](#external-auth-provider) |
@@ -2440,7 +2432,7 @@ Generate and install:
 
 ```bash
 mkdir -p ~/.zsh/completions
-weepcode completions zsh > ~/.zsh/completions/_grok
+weepcode completions zsh > ~/.zsh/completions/_weepcode
 ```
 
 Add to `~/.zshrc`:
@@ -2455,7 +2447,7 @@ Alternative (WeepCode-managed location):
 
 ```bash
 mkdir -p ~/.weepcode/completions/zsh
-weepcode completions zsh > ~/.weepcode/completions/zsh/_grok
+weepcode completions zsh > ~/.weepcode/completions/zsh/_weepcode
 ```
 
 Add to `~/.zshrc`:

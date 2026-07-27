@@ -24,7 +24,7 @@ const zlib = require('zlib');
 
 const brotliCompress = promisify(zlib.brotliCompress);
 
-const xaiRoot = process.env.WEEPCODE_ROOT || path.resolve(__dirname, '..', '..', '..', '..', '..');
+const workspaceRoot = process.env.WEEPCODE_ROOT || path.resolve(__dirname, '..', '..', '..', '..', '..');
 const npmRoot = path.resolve(__dirname, '..', '..');
 
 const NOTICES_SOURCE = path.resolve(
@@ -85,36 +85,36 @@ async function main() {
         {
             platform: 'darwin', arch: 'arm64', binName: 'weepcode',
             envVar: 'WEEPCODE_DARWIN_ARM64',
-            defaultSource: path.join(xaiRoot, 'target', 'release', 'weepcode-pager'),
+            defaultSource: path.join(workspaceRoot, 'target', 'release', 'weepcode'),
         },
         {
             platform: 'darwin', arch: 'x64', binName: 'weepcode',
             envVar: 'WEEPCODE_DARWIN_X64',
-            defaultSource: path.join(xaiRoot, 'target', 'x86_64-apple-darwin', 'release', 'weepcode-pager'),
+            defaultSource: path.join(workspaceRoot, 'target', 'x86_64-apple-darwin', 'release', 'weepcode'),
         },
         {
             platform: 'linux', arch: 'x64', binName: 'weepcode',
             envVar: 'WEEPCODE_LINUX_X64',
-            defaultSource: path.join(xaiRoot, 'target',
+            defaultSource: path.join(workspaceRoot, 'target',
                 'explorer_cross_x86_64-unknown-linux-gnu',
-                'x86_64-unknown-linux-gnu', 'release', 'weepcode-pager'),
+                'x86_64-unknown-linux-gnu', 'release', 'weepcode'),
         },
         {
             platform: 'linux', arch: 'arm64', binName: 'weepcode',
             envVar: 'WEEPCODE_LINUX_ARM64',
-            defaultSource: path.join(xaiRoot, 'target',
+            defaultSource: path.join(workspaceRoot, 'target',
                 'explorer_cross_aarch64-unknown-linux-gnu',
-                'aarch64-unknown-linux-gnu', 'release', 'weepcode-pager'),
+                'aarch64-unknown-linux-gnu', 'release', 'weepcode'),
         },
         {
             platform: 'win32', arch: 'x64', binName: 'weepcode.exe',
             envVar: 'WEEPCODE_WIN32_X64',
-            defaultSource: path.join(xaiRoot, 'target', 'x86_64-pc-windows-msvc', 'release', 'weepcode-pager.exe'),
+            defaultSource: path.join(workspaceRoot, 'target', 'x86_64-pc-windows-msvc', 'release', 'weepcode.exe'),
         },
         {
             platform: 'win32', arch: 'arm64', binName: 'weepcode.exe',
             envVar: 'WEEPCODE_WIN32_ARM64',
-            defaultSource: path.join(xaiRoot, 'target', 'aarch64-pc-windows-msvc', 'release', 'weepcode-pager.exe'),
+            defaultSource: path.join(workspaceRoot, 'target', 'aarch64-pc-windows-msvc', 'release', 'weepcode.exe'),
         },
     ];
 
