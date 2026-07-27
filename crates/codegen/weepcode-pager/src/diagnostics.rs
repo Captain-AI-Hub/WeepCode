@@ -5,7 +5,6 @@
 //! returns `Vec<TerminalWarning>` for downstream banner rendering.
 
 use std::path::Path;
-use std::process::Command;
 
 use crate::notifications::NotificationCondition;
 use crate::notifications::protocol::NotificationProtocol;
@@ -881,13 +880,10 @@ pub fn color_support_warning(
 /// Uses the non-quiet form (`tmux show-option -gv`) which returns non-zero for
 /// unknown options, as opposed to `-q` which always returns 0.
 fn tmux_option_exists(option: &str) -> bool {
-    let mut cmd = Command::new("tmux");
-    cmd.args(["show-option", "-gv", option])
-        .stdin(std::process::Stdio::null())
-        .stderr(std::process::Stdio::null())
-        .stdout(std::process::Stdio::null());
-    weepcode_tty_utils::detach_std_command(&mut cmd);
-    cmd.status().map(|s| s.success()).unwrap_or(false)
+    matches!(
+        crate::terminal::tmux_probe::query_option_support(option),
+        crate::terminal::tmux_probe::TmuxQueryResult::Available(())
+    )
 }
 
 #[cfg(test)]

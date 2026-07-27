@@ -416,6 +416,31 @@ fn mux_tmux_nested_inside_cmux_wins() {
     assert_eq!(detect_multiplexer_from_env(&env), MultiplexerKind::Tmux);
 }
 
+#[test]
+fn mux_herdr_from_herdr_env() {
+    let env = env_from(&[("HERDR_ENV", "1")]);
+    assert_eq!(detect_multiplexer_from_env(&env), MultiplexerKind::Herdr);
+}
+
+#[test]
+fn mux_tmux_nested_inside_herdr_wins() {
+    let env = env_from(&[
+        ("TMUX", "/tmp/tmux-501/default,12345,0"),
+        ("HERDR_ENV", "1"),
+    ]);
+    assert_eq!(detect_multiplexer_from_env(&env), MultiplexerKind::Tmux);
+}
+
+#[test]
+fn mux_herdr_nested_inside_cmux_wins() {
+    let env = env_from(&[
+        ("CMUX_SOCKET_PATH", "/tmp/cmux.sock"),
+        ("CMUX_PANEL_ID", "1"),
+        ("HERDR_ENV", "1"),
+    ]);
+    assert_eq!(detect_multiplexer_from_env(&env), MultiplexerKind::Herdr);
+}
+
 // -- ambiguous marker precedence ------------------------------------------
 
 #[test]
@@ -471,6 +496,15 @@ fn tmux_meta_empty_outside_tmux() {
 }
 
 // -- build_terminal_context_from_env (integration) ------------------------
+
+#[test]
+fn standalone_context_does_not_run_live_tmux_queries() {
+    let env = env_from(&[("TMUX", "/tmp/definitely-missing-tmux-server")]);
+    let ctx = standalone_terminal_context_from_env(&env, crate::host::HostOs::Linux);
+    assert_eq!(ctx.multiplexer, MultiplexerKind::Tmux);
+    assert_eq!(ctx.tmux_version, None);
+    assert_eq!(ctx.tmux_extended_keys, None);
+}
 
 #[test]
 fn context_plain_terminal() {
@@ -1113,6 +1147,20 @@ fn mux_zellij_not_from_version_only() {
     );
 }
 
+#[test]
+fn zellij_version_is_never_the_terminal_version() {
+    let env = env_from(&[
+        ("TERM", "alacritty"),
+        ("ZELLIJ", "0"),
+        ("ZELLIJ_SESSION_NAME", "main"),
+        ("ZELLIJ_VERSION", "0.43.1"),
+    ]);
+    let ctx = build_terminal_context_from_env(&env);
+    assert_eq!(ctx.brand, TerminalName::Alacritty);
+    assert_eq!(ctx.multiplexer, MultiplexerKind::Zellij);
+    assert_eq!(ctx.term_version(), (String::new(), TermVersionSource::None));
+}
+
 // -- Byobu inference edge cases -------------------------------------------
 
 #[test]
@@ -1680,6 +1728,24 @@ fn shift_enter_available_unknown_with_multiplexer() {
         tmux_version: Some("tmux 3.4".to_owned()),
         ..Default::default()
     };
+    assert!(!ctx.shift_enter_unavailable());
+}
+
+#[test]
+fn herdr_over_ssh_pane_does_not_skip_kitty_keyboard() {
+    let env = env_from(&[
+        ("HERDR_ENV", "1"),
+        ("HERDR_PANE_ID", "3"),
+        ("TERM", "xterm-256color"),
+        ("COLORTERM", "truecolor"),
+        ("SSH_CONNECTION", "10.0.0.1 52000 10.0.0.2 22"),
+    ]);
+    let ctx = build_terminal_context_from_env(&env);
+    assert!(ctx.is_ssh);
+    assert_eq!(ctx.brand, TerminalName::Unknown);
+    assert_eq!(ctx.env_brand, TerminalName::Unknown);
+    assert_eq!(ctx.multiplexer, MultiplexerKind::Herdr);
+    assert_eq!(ctx.kitty_skip_reason(), None);
     assert!(!ctx.shift_enter_unavailable());
 }
 
