@@ -1,0 +1,34 @@
+// `McpOAuthConfig` / `McpOAuthConfigMap` re-exported via `mcp` (see `mcp.rs`).
+
+mod announcements;
+mod hints;
+mod load;
+mod mcp;
+mod permissions;
+mod persist;
+mod provider_profile;
+mod resolve;
+mod settings_writes;
+mod tips;
+mod worktree;
+
+pub use announcements::*;
+pub use hints::*;
+pub use load::*;
+pub use mcp::*;
+pub use permissions::*;
+pub use persist::*;
+pub use provider_profile::{
+    ANTHROPIC_VERSION_HEADER, ProviderApiFormat, ProviderProfileInput, provider_profile_slug,
+    upsert_provider_profile, upsert_provider_profile_at,
+};
+// `remote` extracted to the `weepcode-config-types` crate (dependency inversion);
+// re-exported so `crate::util::config::{RemoteSettings, GoalRoleModel}` keep working.
+pub use resolve::*;
+pub use settings_writes::*;
+pub use tips::*;
+pub use weepcode_config_types::{
+    ContextualHintsRemote, DisplayRefreshSettings, DoomLoopRecoverySettings, GoalRoleModel,
+    RemoteSettings,
+};
+pub use worktree::*;

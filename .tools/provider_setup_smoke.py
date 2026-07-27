@@ -2,8 +2,8 @@
 """WeepCode G1/G2 gate smoke test (PTY end-to-end).
 
 Spawns the freshly built TUI in a pty with a pristine HOME and verifies:
-  G1: no xAI login wall — the provider setup form appears instead.
-  G2: the form persists a [model.*] profile to ~/.grok/config.toml (0600),
+  G1: no WeepCode login wall — the provider setup form appears instead.
+  G2: the form persists a [model.*] profile to ~/.weepcode/config.toml (0600),
       points [models].default at it, and a restart skips the login wall.
 
 Usage: provider_setup_smoke.py <binary> <workdir>
@@ -60,19 +60,19 @@ def type_text(fd, text, delay=0.02):
 def main():
     binary, workdir = sys.argv[1], sys.argv[2]
     home = os.path.join(workdir, "home")
-    grok_home = os.path.join(home, ".grok")
+    weepcode_home = os.path.join(home, ".weepcode")
     shutil.rmtree(home, ignore_errors=True)
-    os.makedirs(grok_home)
+    os.makedirs(weepcode_home)
 
     env = dict(
         os.environ,
         HOME=home,
-        GROK_HOME=grok_home,
+        WEEPCODE_HOME=weepcode_home,
         TERM="xterm-256color",
-        # No XAI_API_KEY / GROK_* credentials on purpose.
+        # No WEEPCODE_API_KEY / WEEPCODE_* credentials on purpose.
     )
-    env.pop("XAI_API_KEY", None)
-    env.pop("GROK_CODE_XAI_API_KEY", None)
+    env.pop("WEEPCODE_API_KEY", None)
+    env.pop("WEEPCODE_CODE_WEEPCODE_API_KEY", None)
 
     pid, fd = pty.fork()
     if pid == 0:
@@ -82,7 +82,7 @@ def main():
     transcript = []
     failures = []
 
-    # ── Phase 1: the setup form must appear (no xAI login wall). ──────────
+    # ── Phase 1: the setup form must appear (no WeepCode login wall). ──────────
     read_available(fd, transcript, 20)
     text = screen_text(transcript)
     # Span boundaries and cursor-positioning escapes eat whitespace; compare
@@ -92,7 +92,7 @@ def main():
         failures.append("G1: provider setup form did not appear at startup")
     for bad in ("grok.com", "auth.x.ai", "accounts.x.ai", "Loginwith"):
         if bad.replace(" ", "") in text_nospace:
-            failures.append(f"G1: xAI login UI leaked: {bad!r} on screen")
+            failures.append(f"G1: WeepCode login UI leaked: {bad!r} on screen")
 
     # ── Phase 2: fill the form (openai-compatible format). ────────────────
     # Focus starts on Format. Move right once: openai-responses -> openai-compatible.
@@ -121,7 +121,7 @@ def main():
     read_available(fd, transcript, 15)
 
     # ── Assert the profile landed on disk. ────────────────────────────────
-    config_path = os.path.join(grok_home, "config.toml")
+    config_path = os.path.join(weepcode_home, "config.toml")
     if not os.path.exists(config_path):
         failures.append("G2: config.toml was not created after form submit")
         config_text = ""

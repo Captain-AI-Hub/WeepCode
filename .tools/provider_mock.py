@@ -4,7 +4,7 @@
 Serves POST /v1/chat/completions (SSE streaming) on 127.0.0.1:18321 and logs
 every request line + headers to <logfile> so the test can assert
   - the agent's request actually arrived (auth header present), and
-  - no x-grok-* tracking headers leaked to the third-party endpoint.
+  - no x-weepcode-* tracking headers leaked to the third-party endpoint.
 
 Usage: provider_mock.py <logfile>
 """

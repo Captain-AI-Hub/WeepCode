@@ -4,7 +4,7 @@
 
 ## 这是什么
 
-WeepCode：终端 AI 编码助手（Rust TUI），fork 自 xAI Grok Build，正在改造为支持
+WeepCode：终端 AI 编码助手（Rust TUI），fork 自 WeepCode WeepCode Build，正在改造为支持
 OpenAI Responses / OpenAI Compatible / Anthropic Messages 三种 API 格式的通用工具。
 架构细节见 `docs/project.md`。
 
@@ -21,15 +21,17 @@ OpenAI Responses / OpenAI Compatible / Anthropic Messages 三种 API 格式的�
 
 ```sh
 export PROTOC=$PWD/.tools/protoc/bin/protoc   # proto codegen 需要（或 PATH 上的 protoc）
-cargo check -p xai-grok-pager-bin        # 快速验证（主二进制）
-cargo check -p xai-grok-pager -p xai-grok-shell -p xai-grok-sampler
+cargo check -p weepcode-pager-bin        # 快速验证（主二进制）
+cargo check -p weepcode-pager -p weepcode-shell -p weepcode-sampler
 cargo test -p <改动的crate>               # 改动涉及 crate 的测试
 cargo clippy -p <改动的crate>             # 遵循 workspace lints
 cargo fmt                                 # rustfmt.toml 已配置
-cargo run -p xai-grok-pager-bin          # 构建并启动 TUI（产物 target/debug/weepcode）
+cargo run -p weepcode-pager-bin          # 构建并启动 TUI（产物 target/debug/weepcode）
 ```
 
-注意：包名仍是 `xai-grok-pager-bin`（crate 改名属 Phase 5），但二进制产物名为 `weepcode`。
+注意：包名为 `weepcode-pager-bin`，二进制产物名为 `weepcode`（Phase 5 已完成全量改名：
+crate `weepcode-*`、env `WEEPCODE_*`、配置目录 `~/.weepcode`、ACP 方法名 `weepcode/*`；
+无兼容 shim，旧 `GROK_*` 与 `~/.grok` 不再读取）。
 
 ## 工作流纪律
 
@@ -41,6 +43,6 @@ cargo run -p xai-grok-pager-bin          # 构建并启动 TUI（产物 target/d
 
 ## 当前阶段提示
 
-crate 名（`xai-grok-*`）、环境变量（`GROK_*`/`XAI_*`）、配置目录（`~/.grok`）在本阶段**保持不变**，
+crate 名（`weepcode-*`）、环境变量（`WEEPCODE_*`/`WEEPCODE_*`）、配置目录（`~/.weepcode`）在本阶段**保持不变**，
 只在 Phase 4 改用户可见品牌（CLI 名、界面文案、系统提示词 label）。全量改名属后续阶段，
 未经 codemap 排期不得提前动手。
