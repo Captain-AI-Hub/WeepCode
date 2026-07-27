@@ -146,3 +146,11 @@ TUI 内部架构：`Action`（输入意图）→ `dispatch`（同步状态变更
 2. 设置结果持久化为 `config.toml` 的 `[model.*]` + 设为默认模型，重启即免登录
 3. 自定义 provider 模式下切断全部 WeepCode 服务调用
 4. 用户可见品牌替换为 WeepCode；crate/目录/环境变量维持现状，后续阶段再机械改名
+
+## 11. CI / 构建平台
+
+- GitHub Actions 配置位于 `.github/workflows/manual-ci.yml`。
+- CI 仅通过 `workflow_dispatch` 手动触发，不绑定 `push` / `pull_request`。
+- 支持平台范围固定为：Linux x86_64、Linux aarch64、macOS aarch64、Windows x86_64。
+- 每次手动触发通过 `platform` 输入选择单个平台，或选择 `all` 跑全部平台。
+- 每个平台执行：安装 protobuf compiler、`cargo fmt --all -- --check`、`cargo check --locked -p weepcode-pager-bin`、`cargo test --locked -p weepcode-pager-render terminal::`、`cargo build --locked --release -p weepcode-pager-bin`，并上传 `weepcode` / `weepcode.exe` artifact。

@@ -253,3 +253,10 @@ third_party 注释引用同步、文件名含 weepcode 的一并 git mv。
 - 任一硬门禁未通过 → 停在当前阶段修复，禁止跳阶段
 - 每完成一个 checklist 项 → 立即更新 `docs/process/{当天日期}.md`（规则见 docs/rule.md §2）
 - 本计划本身如需变更（阶段增删、门禁调整）→ 先改本文件并说明理由，再执行
+
+## 运维任务 — 手动 CI
+
+- [x] 新增 GitHub Actions 手动 CI：仅 `workflow_dispatch`，不自动响应 `push` / `pull_request`
+- [x] 平台范围限定为 Linux x86_64、Linux aarch64、macOS aarch64、Windows x86_64
+- [x] 手动触发时通过 `platform` 输入选择单个平台，或选择 `all` 跑全部平台
+- [x] 每个平台执行 fmt/check/terminal 测试/release build，并上传对应二进制 artifact

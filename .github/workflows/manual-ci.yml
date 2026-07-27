@@ -1,0 +1,163 @@
+name: Manual CI
+
+on:
+  workflow_dispatch:
+    inputs:
+      platform:
+        description: Platform to run
+        required: true
+        default: linux-x86_64
+        type: choice
+        options:
+          - linux-x86_64
+          - linux-aarch64
+          - macos-aarch64
+          - windows-x86_64
+          - all
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  linux-x86_64:
+    name: Linux x86_64
+    if: ${{ inputs.platform == 'linux-x86_64' || inputs.platform == 'all' }}
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Cache Cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/git
+            ~/.cargo/registry
+            target
+          key: ${{ runner.os }}-${{ runner.arch }}-cargo-${{ hashFiles('Cargo.lock') }}
+          restore-keys: ${{ runner.os }}-${{ runner.arch }}-cargo-
+      - name: Install protobuf compiler
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y protobuf-compiler
+      - name: Set up Rust
+        run: rustup show
+      - name: Check formatting
+        run: cargo fmt --all -- --check
+      - name: Check main binary
+        run: cargo check --locked -p weepcode-pager-bin
+      - name: Test changed core crates
+        run: "cargo test --locked -p weepcode-pager-render terminal::"
+      - name: Build release binary
+        run: cargo build --locked --release -p weepcode-pager-bin
+      - name: Upload binary
+        uses: actions/upload-artifact@v4
+        with:
+          name: weepcode-linux-x86_64
+          path: target/release/weepcode
+          if-no-files-found: error
+
+  linux-aarch64:
+    name: Linux aarch64
+    if: ${{ inputs.platform == 'linux-aarch64' || inputs.platform == 'all' }}
+    runs-on: ubuntu-24.04-arm
+    steps:
+      - uses: actions/checkout@v4
+      - name: Cache Cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/git
+            ~/.cargo/registry
+            target
+          key: ${{ runner.os }}-${{ runner.arch }}-cargo-${{ hashFiles('Cargo.lock') }}
+          restore-keys: ${{ runner.os }}-${{ runner.arch }}-cargo-
+      - name: Install protobuf compiler
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y protobuf-compiler
+      - name: Set up Rust
+        run: rustup show
+      - name: Check formatting
+        run: cargo fmt --all -- --check
+      - name: Check main binary
+        run: cargo check --locked -p weepcode-pager-bin
+      - name: Test changed core crates
+        run: "cargo test --locked -p weepcode-pager-render terminal::"
+      - name: Build release binary
+        run: cargo build --locked --release -p weepcode-pager-bin
+      - name: Upload binary
+        uses: actions/upload-artifact@v4
+        with:
+          name: weepcode-linux-aarch64
+          path: target/release/weepcode
+          if-no-files-found: error
+
+  macos-aarch64:
+    name: macOS aarch64
+    if: ${{ inputs.platform == 'macos-aarch64' || inputs.platform == 'all' }}
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Cache Cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/git
+            ~/.cargo/registry
+            target
+          key: ${{ runner.os }}-${{ runner.arch }}-cargo-${{ hashFiles('Cargo.lock') }}
+          restore-keys: ${{ runner.os }}-${{ runner.arch }}-cargo-
+      - name: Install protobuf compiler
+        run: brew install protobuf
+      - name: Set up Rust
+        run: rustup show
+      - name: Check formatting
+        run: cargo fmt --all -- --check
+      - name: Check main binary
+        run: cargo check --locked -p weepcode-pager-bin
+      - name: Test changed core crates
+        run: "cargo test --locked -p weepcode-pager-render terminal::"
+      - name: Build release binary
+        run: cargo build --locked --release -p weepcode-pager-bin
+      - name: Upload binary
+        uses: actions/upload-artifact@v4
+        with:
+          name: weepcode-macos-aarch64
+          path: target/release/weepcode
+          if-no-files-found: error
+
+  windows-x86_64:
+    name: Windows x86_64
+    if: ${{ inputs.platform == 'windows-x86_64' || inputs.platform == 'all' }}
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v4
+      - name: Cache Cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/git
+            ~/.cargo/registry
+            target
+          key: ${{ runner.os }}-${{ runner.arch }}-cargo-${{ hashFiles('Cargo.lock') }}
+          restore-keys: ${{ runner.os }}-${{ runner.arch }}-cargo-
+      - name: Install protobuf compiler
+        run: choco install protoc -y
+      - name: Set up Rust
+        run: rustup show
+      - name: Check formatting
+        run: cargo fmt --all -- --check
+      - name: Check main binary
+        run: cargo check --locked -p weepcode-pager-bin
+      - name: Test changed core crates
+        run: "cargo test --locked -p weepcode-pager-render terminal::"
+      - name: Build release binary
+        run: cargo build --locked --release -p weepcode-pager-bin
+      - name: Upload binary
+        uses: actions/upload-artifact@v4
+        with:
+          name: weepcode-windows-x86_64
+          path: target/release/weepcode.exe
+          if-no-files-found: error
