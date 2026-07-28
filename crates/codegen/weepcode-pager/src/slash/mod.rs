@@ -258,6 +258,8 @@ pub struct SlashController {
     hide_session_scoped: bool,
     /// Offer `/announcements` when session announcements (critical or promo) exist.
     has_session_announcements: bool,
+    /// Offer workflow commands when the shell advertised workflow support or runs exist.
+    workflows_available: bool,
     /// Effective render mode of this process (immutable after startup — it only
     /// changes via a full `/minimal`-`/fullscreen` re-exec). Injected via
     /// [`Self::set_screen_mode`] wherever prompts are created; gates the
@@ -293,6 +295,7 @@ impl SlashController {
             cwd,
             hide_session_scoped: false,
             has_session_announcements: false,
+            workflows_available: false,
             screen_mode: crate::app::ScreenMode::Fullscreen,
             mru,
         }
@@ -313,6 +316,14 @@ impl SlashController {
         self.has_session_announcements
     }
 
+    pub fn set_workflows_available(&mut self, available: bool) {
+        self.workflows_available = available;
+    }
+
+    pub fn workflows_available(&self) -> bool {
+        self.workflows_available
+    }
+
     /// Record the process's effective screen mode (see the field doc).
     pub(crate) fn set_screen_mode(&mut self, mode: crate::app::ScreenMode) {
         self.screen_mode = mode;
@@ -327,6 +338,7 @@ impl SlashController {
             models,
             cwd: &self.cwd,
             has_session_announcements: self.has_session_announcements,
+            workflows_available: self.workflows_available,
             screen_mode: self.screen_mode,
         }
     }

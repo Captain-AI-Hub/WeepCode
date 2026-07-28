@@ -239,14 +239,22 @@ impl AgentView {
             if self.active_pane == ActivePane::Catalog {
                 (false, None, self.catalog.selected_entry().is_some())
             } else if self.active_pane == ActivePane::Tasks {
+                let selected_task_entry = self.tasks.selected_entry();
                 let has_selected = self.tasks.selected_task_id().is_some_and(|tid| {
                     self.session
                         .bg_tasks
                         .get(tid)
                         .is_some_and(|t| !t.stdout.is_empty())
                 });
-                let has_any_selected = self.tasks.selected_task_id().is_some();
-                (has_selected, None, has_any_selected)
+                let has_openable_selected = selected_task_entry.is_some_and(|entry| {
+                    matches!(
+                        entry,
+                        crate::views::tasks_pane::TaskEntry::BgTask { .. }
+                            | crate::views::tasks_pane::TaskEntry::Agent { .. }
+                            | crate::views::tasks_pane::TaskEntry::Workflow { .. }
+                    )
+                });
+                (has_selected, None, has_openable_selected)
             } else if self.active_pane == ActivePane::Scrollback {
                 let is_bg_task = selected_entry.is_some_and(|e| {
                     matches!(e.block, crate::scrollback::block::RenderBlock::BgTask(_))
@@ -304,10 +312,20 @@ impl AgentView {
             false
         } else if self.active_pane == ActivePane::Tasks {
             self.tasks
-                .selected_task_id()
-                .and_then(|tid| self.session.bg_tasks.get(tid))
-                .is_some_and(|t| {
-                    t.status == crate::app::agent::BgTaskStatus::Running && !t.pending_kill
+                .selected_entry()
+                .is_some_and(|entry| match entry {
+                    crate::views::tasks_pane::TaskEntry::BgTask { task_id, .. } => {
+                        self.session.bg_tasks.get(task_id).is_some_and(|t| {
+                            t.status == crate::app::agent::BgTaskStatus::Running && !t.pending_kill
+                        })
+                    }
+                    crate::views::tasks_pane::TaskEntry::Agent { subagent_id, .. } => self
+                        .subagent_sessions
+                        .values()
+                        .any(|s| s.subagent_id.as_ref() == subagent_id && s.is_running()),
+                    crate::views::tasks_pane::TaskEntry::Workflow { stoppable, .. } => *stoppable,
+                    crate::views::tasks_pane::TaskEntry::Scheduled { .. } => true,
+                    crate::views::tasks_pane::TaskEntry::Header { .. } => false,
                 })
         } else if self.active_pane == ActivePane::Scrollback {
             !selected_is_group_header
@@ -1012,6 +1030,7 @@ impl AgentView {
             &self.session.scheduled_tasks,
             self.cron_task_id.as_deref(),
             &queued_cron_ids,
+            &self.workflow_runs,
         );
         if self.active_pane == ActivePane::Tasks && !self.tasks.is_visible() {
             self.active_pane = ActivePane::Scrollback;
@@ -1057,7 +1076,7 @@ impl AgentView {
             subagents: self
                 .subagent_sessions
                 .values()
-                .filter(|s| s.is_running())
+                .filter(|s| s.is_running() && s.workflow_run_id.is_none())
                 .count(),
         };
         let parked = self.renders_parked();
@@ -1227,6 +1246,7 @@ impl AgentView {
             &self.session.bg_tasks,
             &self.subagent_sessions,
             &self.session.scheduled_tasks,
+            &self.workflow_runs,
         );
         if running_count > 0 {
             let spinner_frames = crate::glyphs::dot_spinner_frames();
@@ -4031,6 +4051,33 @@ impl AgentView {
             );
             self.hit_goal_close.rect = close_rect;
             self.frame_occluder_rects.push(overlay_rect);
+        }
+        if self.show_workflows {
+            let runs = self.workflow_runs_newest_first();
+            let mut view = self.workflows_view.clone();
+            view.normalize(&runs);
+            let tick = self.tasks.tick_count() as usize;
+            let live: crate::views::workflows::WorkflowAgentLiveMap = self
+                .subagent_sessions
+                .iter()
+                .filter(|(_, info)| info.workflow_run_id.is_some() && info.is_running())
+                .map(|(id, info)| {
+                    (
+                        id.clone(),
+                        crate::views::workflows::WorkflowAgentLiveStatus {
+                            activity: info.activity_label.clone(),
+                            tokens_used: info.tokens_used,
+                            elapsed_ms: Some(info.display_elapsed().as_millis() as u64),
+                        },
+                    )
+                })
+                .collect();
+            let popup =
+                crate::views::workflows::render_workflows(buf, area, &runs, &mut view, tick, &live);
+            self.workflows_view = view;
+            if let Some(popup) = popup {
+                self.frame_occluder_rects.push(popup);
+            }
         }
         self.pane_areas = layout.pane_areas();
         {

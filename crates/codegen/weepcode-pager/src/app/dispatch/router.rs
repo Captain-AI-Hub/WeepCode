@@ -605,14 +605,21 @@ pub(crate) fn dispatch(action: Action, app: &mut AppView) -> Vec<Effect> {
             };
             if let Some(ref mut modal) = agent.extensions_modal {
                 modal.skills_data = crate::views::extensions_modal::TabDataState::Loading;
+                modal.workflows_data = crate::views::extensions_modal::TabDataState::Loading;
             }
             let Some(session_id) = agent.session.session_id.clone() else {
                 return vec![];
             };
-            vec![Effect::FetchSkillsList {
-                agent_id: id,
-                session_id,
-            }]
+            vec![
+                Effect::FetchSkillsList {
+                    agent_id: id,
+                    session_id: session_id.clone(),
+                },
+                Effect::FetchWorkflowsList {
+                    agent_id: id,
+                    session_id,
+                },
+            ]
         }
         Action::RefreshMcpList => {
             let ActiveView::Agent(id) = app.active_view else {
@@ -1243,6 +1250,21 @@ pub(crate) fn dispatch(action: Action, app: &mut AppView) -> Vec<Effect> {
             with_active_agent(app, |agent| {
                 if agent.goal_state.is_some() {
                     agent.show_goal_detail = !agent.show_goal_detail;
+                }
+            });
+            vec![]
+        }
+        Action::ToggleWorkflows => {
+            let opening = matches!(app.active_view, ActiveView::Agent(id) if app.agents.get(&id).is_some_and(|agent| !agent.show_workflows));
+            if opening {
+                app.scroll_state.cancel_stream();
+                app.last_scroll_pos = None;
+            }
+            with_active_agent(app, |agent| {
+                agent.show_workflows = !agent.show_workflows;
+                if agent.show_workflows {
+                    agent.workflows_view.reset();
+                    agent.show_goal_detail = false;
                 }
             });
             vec![]

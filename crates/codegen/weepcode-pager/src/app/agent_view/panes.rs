@@ -364,6 +364,11 @@ impl AgentView {
                     }
                 }
                 Some(TaskEntry::Scheduled { .. }) => {}
+                Some(TaskEntry::Workflow { name, .. }) => {
+                    let name = name.clone();
+                    self.open_workflow_detail(&name);
+                    return InputOutcome::Changed;
+                }
                 Some(TaskEntry::Header { .. }) => {}
                 None => {}
             }
@@ -391,6 +396,15 @@ impl AgentView {
                 }
                 Some(TaskEntry::Scheduled { task_id, .. }) => {
                     return InputOutcome::Action(Action::CancelScheduledTask(task_id.clone()));
+                }
+                Some(TaskEntry::Workflow {
+                    name, stoppable, ..
+                }) => {
+                    if *stoppable {
+                        return InputOutcome::Action(Action::SendSlashCommandPreservingDraft(
+                            format!("/workflow stop {name}"),
+                        ));
+                    }
                 }
                 Some(TaskEntry::Header { .. }) => {}
                 None => {}

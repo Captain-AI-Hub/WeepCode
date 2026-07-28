@@ -99,6 +99,8 @@ mod interjection;
 mod tool_calls;
 #[path = "acp_session_impl/turn.rs"]
 mod turn;
+#[path = "acp_session_impl/workflow.rs"]
+mod workflow_run;
 pub(crate) use interjection::*;
 #[path = "acp_session_impl/laziness.rs"]
 mod laziness;
@@ -166,6 +168,45 @@ mod recap;
 mod rewind;
 #[path = "acp_session_impl/run_loop.rs"]
 mod run_loop;
+
+#[cfg(test)]
+pub(crate) fn workflow_manager_for_tests(
+    session_id: &str,
+    cwd: &str,
+) -> Arc<TokioMutex<crate::session::workflow::manager::WorkflowManager>> {
+    let (persistence_tx, _) = mpsc::unbounded_channel();
+    let store =
+        crate::session::workflow::store::WorkflowRunStore::new(None, persistence_tx.clone());
+    let notify = crate::session::workflow::notify::WorkflowNotifySender::new(
+        acp::SessionId::new(session_id),
+        GatewaySender::new(mpsc::unbounded_channel().0),
+        persistence_tx,
+        store.clone(),
+    );
+    Arc::new(TokioMutex::new(
+        crate::session::workflow::manager::WorkflowManager::new(
+            session_id.to_string(),
+            None,
+            std::path::PathBuf::from(cwd),
+            Arc::new(parking_lot::Mutex::new(
+                crate::session::workflow::tracker::WorkflowTracker::default(),
+            )),
+            store,
+            notify,
+            mpsc::unbounded_channel().0,
+            Arc::new(|_, _, _| {}),
+            mpsc::unbounded_channel().0,
+            HashMap::new(),
+        ),
+    ))
+}
+
+#[cfg(test)]
+pub(crate) fn workflow_launch_tx_for_tests() -> mpsc::UnboundedSender<
+    weepcode_tools::implementations::weepcode_build::workflow::WorkflowLaunchEnvelope,
+> {
+    mpsc::unbounded_channel().0
+}
 #[path = "acp_session_impl/session_setup.rs"]
 mod session_setup;
 #[path = "acp_session_impl/turn_end.rs"]
@@ -755,6 +796,8 @@ pub(crate) struct SessionActor {
     pub(crate) plan_mode: Arc<parking_lot::Mutex<crate::session::plan_mode::PlanModeTracker>>,
     /// Whether goal mode (`/goal`) is enabled for this session (feature flag).
     pub(crate) goal_enabled: bool,
+    /// Whether Rhai-backed background workflows are enabled for this session.
+    pub(crate) background_workflows_enabled: bool,
     /// `goal_enabled` && `update_goal` in toolset; refreshed with command availability.
     goal_harness_enabled: std::sync::atomic::AtomicBool,
     /// One-shot: auto-pause persisted Active goal when harness is unavailable.
@@ -798,6 +841,11 @@ pub(crate) struct SessionActor {
     /// `goal_update_rx`).
     pub(crate) goal_update_tx: tokio::sync::mpsc::UnboundedSender<
         weepcode_tools::implementations::weepcode_build::update_goal::UpdateGoalEnvelope,
+    >,
+    pub(crate) workflow_manager:
+        Arc<tokio::sync::Mutex<crate::session::workflow::manager::WorkflowManager>>,
+    pub(crate) workflow_launch_tx: tokio::sync::mpsc::UnboundedSender<
+        weepcode_tools::implementations::weepcode_build::workflow::WorkflowLaunchEnvelope,
     >,
     /// Resolved master kill-switch for the verification stage (the
     /// adversarial skeptic panel). `false` short-circuits
@@ -1170,7 +1218,8 @@ impl SessionActor {
     /// `send_available_commands_update`).
     async fn command_availability(&self) -> slash_commands::CommandAvailability {
         let tool_names = self.registered_tool_names().await;
-        let availability = self.build_command_availability(&tool_names);
+        let has_workflow_runs = !self.workflow_tracker().await.lock().list().is_empty();
+        let availability = self.build_command_availability(&tool_names, has_workflow_runs);
         self.maybe_reconcile_active_goal_without_harness().await;
         self.maybe_reconcile_active_goal_without_plan().await;
         availability
@@ -1185,6 +1234,7 @@ impl SessionActor {
     fn build_command_availability(
         &self,
         tool_names: &[String],
+        has_workflow_runs: bool,
     ) -> slash_commands::CommandAvailability {
         use weepcode_tools::implementations::memory::{
             MEMORY_GET_TOOL_NAME, MEMORY_SEARCH_TOOL_NAME,
@@ -1202,6 +1252,10 @@ impl SessionActor {
             hooks: self.hook_registry.borrow().is_some(),
             plugins: self.plugin_registry.borrow().is_some(),
             goal,
+            workflows: tool_names.iter().any(|n| {
+                n == weepcode_tools::implementations::weepcode_build::workflow::WORKFLOW_TOOL_NAME
+            }),
+            workflow_management: has_workflow_runs,
         }
     }
     /// Names of every tool registered with the session's tool bridge.
@@ -1219,16 +1273,40 @@ impl SessionActor {
             .map(|td| td.function.name)
             .collect()
     }
+    pub(crate) async fn workflow_tracker(
+        &self,
+    ) -> Arc<parking_lot::Mutex<crate::session::workflow::tracker::WorkflowTracker>> {
+        self.workflow_manager.lock().await.tracker()
+    }
     /// Send visible text output to the TUI from a slash command.
     ///
     /// Uses `AgentMessageChunk` so the text appears in the conversation
     /// scrollback, then flushes the replay buffer to ensure delivery
     /// before the turn ends.
     async fn send_slash_command_output(&self, text: &str) {
+        self.send_slash_command_output_with_meta(text, None).await;
+    }
+    async fn send_host_turn_slash_command_output(&self, text: &str) {
+        let mut chunk_meta = serde_json::Map::new();
+        chunk_meta.insert(
+            crate::session::storage::HOST_TURN_META_KEY.into(),
+            serde_json::json!(true),
+        );
+        self.send_slash_command_output_with_meta(text, Some(chunk_meta))
+            .await;
+    }
+    async fn send_slash_command_output_with_meta(
+        &self,
+        text: &str,
+        meta: Option<serde_json::Map<String, serde_json::Value>>,
+    ) {
         self.send_update(
-            acp::SessionUpdate::AgentMessageChunk(acp::ContentChunk::new(acp::ContentBlock::Text(
-                acp::TextContent::new(text.to_string()),
-            ))),
+            acp::SessionUpdate::AgentMessageChunk(
+                acp::ContentChunk::new(acp::ContentBlock::Text(acp::TextContent::new(
+                    text.to_string(),
+                )))
+                .meta(meta),
+            ),
             None,
         )
         .await;

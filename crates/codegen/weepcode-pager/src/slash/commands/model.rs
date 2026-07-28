@@ -276,6 +276,7 @@ mod tests {
             models: &state,
             cwd: std::path::Path::new("."),
             has_session_announcements: false,
+            workflows_available: false,
             screen_mode: crate::app::ScreenMode::Fullscreen,
         };
         let items = cmd.suggest_args(&ctx, "").unwrap();
@@ -309,6 +310,7 @@ mod tests {
             models: &state,
             cwd: std::path::Path::new("."),
             has_session_announcements: false,
+            workflows_available: false,
             screen_mode: crate::app::ScreenMode::Fullscreen,
         };
         // Args query has a trailing space -> effort phase. Items come out
@@ -338,6 +340,7 @@ mod tests {
             models: &state,
             cwd: std::path::Path::new("."),
             has_session_announcements: false,
+            workflows_available: false,
             screen_mode: crate::app::ScreenMode::Fullscreen,
         };
         // Still in effort phase; matcher upstream narrows to high / xhigh.
@@ -356,6 +359,7 @@ mod tests {
             models: &state,
             cwd: std::path::Path::new("."),
             has_session_announcements: false,
+            workflows_available: false,
             screen_mode: crate::app::ScreenMode::Fullscreen,
         };
         // No trailing space, user is still typing the model name.

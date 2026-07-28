@@ -4105,6 +4105,14 @@ impl AppView {
                 Some(crate::views::btw_overlay::BtwOverlayState::Loading { .. })
             ) && spinner_frame_tick;
             needs_redraw |= agent.drain_blocked();
+            agent.prompt.slash_controller.set_workflows_available(
+                agent
+                    .session
+                    .available_commands
+                    .iter()
+                    .any(|command| command.name == "workflow")
+                    || !agent.workflow_runs.is_empty(),
+            );
             if agent.acp_synced_generation != agent.session.available_commands_generation {
                 agent.prompt.sync_acp_commands(
                     &agent.session.available_commands,

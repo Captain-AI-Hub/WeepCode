@@ -163,7 +163,12 @@ pub(super) fn handle_session_notification(notif: &acp::ExtNotification, app: &mu
     ) {
         return false;
     }
-    if !meta.is_replay
+    let is_workflow_update = matches!(
+        session_notif.update,
+        WeepcodeSessionUpdate::WorkflowUpdated { .. }
+    );
+    if !is_workflow_update
+        && !meta.is_replay
         && meta.event_seq.is_some_and(|seq| {
             agent
                 .last_applied_weepcode_event_seq
@@ -257,6 +262,7 @@ pub(super) fn handle_session_notification(notif: &acp::ExtNotification, app: &mu
             capability_mode,
             context_normalized,
             parent_prompt_id,
+            workflow_run_id,
             ..
         } => {
             tracing::info!(
@@ -285,6 +291,7 @@ pub(super) fn handle_session_notification(notif: &acp::ExtNotification, app: &mu
                     context_source: effective_context_source.map(Arc::from),
                     resumed_from: resumed_from.map(Arc::from),
                     capability_mode: capability_mode.map(Arc::from),
+                    workflow_run_id: workflow_run_id.clone().map(Arc::from),
                     context_normalized,
                     parent_prompt_id: parent_prompt_id.map(Arc::from),
                     started_at: std::time::Instant::now(),
@@ -861,6 +868,9 @@ pub(super) fn handle_session_notification(notif: &acp::ExtNotification, app: &mu
             });
             true
         }
+        update @ WeepcodeSessionUpdate::WorkflowUpdated { .. } => {
+            ingest_workflow_update(agent, update)
+        }
         WeepcodeSessionUpdate::GoalUpdated {
             goal_id,
             objective,
@@ -998,6 +1008,7 @@ pub(super) fn handle_session_notification(notif: &acp::ExtNotification, app: &mu
     }
     if let Some(agent) = app.agents.get_mut(&parent_id) {
         if let Some(seq) = meta.event_seq
+            && !is_workflow_update
             && !meta.is_replay
         {
             agent.last_applied_weepcode_event_seq = Some(seq);

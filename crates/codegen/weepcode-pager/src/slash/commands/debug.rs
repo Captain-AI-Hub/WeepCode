@@ -104,6 +104,7 @@ mod tests {
             models,
             cwd: std::path::Path::new("."),
             has_session_announcements: false,
+            workflows_available: false,
             screen_mode: crate::app::ScreenMode::Fullscreen,
         }
     }

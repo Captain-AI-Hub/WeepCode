@@ -133,6 +133,8 @@ pub const UPDATE_GOAL_TOOL_NAME: &str = "update_goal";
 
 pub const GOAL_COMMAND_NAME: &str = "goal";
 
+pub const WORKFLOW_TOOL_NAME: &str = "workflow";
+
 /// Bare subcommand tokens reserved for goal lifecycle control rather than
 /// being treated as an objective, matching the shell's /goal grammar.
 pub const GOAL_RESERVED_SUBCOMMANDS: &[&str] = &["status", "pause", "resume", "clear", "edit"];

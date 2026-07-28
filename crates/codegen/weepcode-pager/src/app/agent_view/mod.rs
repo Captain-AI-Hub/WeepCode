@@ -167,6 +167,7 @@ mod selection;
 mod session;
 mod shell_completion;
 mod viewer;
+mod workflows_overlay;
 use super::actions;
 use super::dispatch;
 pub(super) fn active_contexts_for_pane(pane: ActivePane) -> Vec<crate::actions::When> {
@@ -541,6 +542,10 @@ pub(crate) struct SessionReload {
     tracker: crate::acp::tracker::AcpUpdateTracker,
     /// Pre-outage todo list (replayed Plan updates overwrite the live pane).
     todo: TodoPane,
+    workflow_blocks: std::collections::HashMap<String, crate::scrollback::entry::EntryId>,
+    workflow_runs: Vec<crate::views::workflows::WorkflowRunSnapshot>,
+    workflow_run_revisions: std::collections::HashMap<String, u64>,
+    cleared_workflow_runs: std::collections::HashSet<String>,
     /// Reconnect cursor as of window open, restored with the stash so a
     /// later reload doesn't skip events the restored transcript never got.
     last_seen_event_id: Option<String>,
@@ -819,6 +824,12 @@ pub struct AgentView {
     /// Current goal orchestration state. Set by `GoalUpdated` session
     /// notifications, cleared when a new session starts.
     pub goal_state: Option<super::agent::GoalDisplayState>,
+    pub workflow_blocks: std::collections::HashMap<String, crate::scrollback::entry::EntryId>,
+    pub workflow_runs: Vec<crate::views::workflows::WorkflowRunSnapshot>,
+    pub workflow_run_revisions: std::collections::HashMap<String, u64>,
+    pub cleared_workflow_runs: std::collections::HashSet<String>,
+    pub show_workflows: bool,
+    pub workflows_view: crate::views::workflows::WorkflowsViewState,
     /// The consumed parked-wait marker slot for the current turn, if any.
     /// Keyed by prompt id: a new turn naturally invalidates the slot with no
     /// explicit clear site. See [`ParkedMarkerSlot`].
@@ -2237,6 +2248,7 @@ pub(super) mod test_fixtures {
             context_source: None,
             resumed_from: None,
             capability_mode: None,
+            workflow_run_id: None,
             context_normalized: false,
             parent_prompt_id: None,
             started_at: Instant::now(),

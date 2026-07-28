@@ -48,6 +48,13 @@ auth_scheme = "x_api_key"
 default = "claude"
 ```
 
+## Deep Research
+
+TUI 内可用 `/deep-research <query>` 启动内置深度研究 workflow。运行后用
+`/workflows` 查看阶段、子 agent、预算和结果；也可用 `/workflow pause|resume|stop <run>`
+管理运行。可复用 workflow 放在项目 `.weepcode/workflows/` 或用户
+`~/.weepcode/workflows/`。更多细节见 `docs/deep-research.md`。
+
 ## 构建要求
 
 - **Rust**：工具链由 `rust-toolchain.toml` 锁定
@@ -64,6 +71,7 @@ cargo check -p weepcode-pager-bin              # 快速验证
 
 - `AGENTS.md` — agent 入口规则（命名、进度、门禁纪律）
 - `docs/project.md` — 整体架构审计
+- `docs/deep-research.md` — Deep Research / workflow 用户与开发说明
 - `docs/codemap.md` — 改造计划：阶段、checklist、硬门禁
 - `docs/rule.md` — 项目规则
 - `docs/process/` — 每日进度记录

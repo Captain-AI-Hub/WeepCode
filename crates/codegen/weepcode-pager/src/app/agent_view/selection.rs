@@ -898,6 +898,8 @@ impl AgentView {
             .is_some_and(|b| matches!(b, crate::scrollback::block::RenderBlock::BgTask(_)));
         let is_subagent = entry_block
             .is_some_and(|b| matches!(b, crate::scrollback::block::RenderBlock::Subagent(_)));
+        let is_workflow = entry_block
+            .is_some_and(|b| matches!(b, crate::scrollback::block::RenderBlock::Workflow(_)));
 
         // Word-select tip probe (see WORD_SELECT_REPEAT_WINDOW): assistant
         // messages only — headers / prompts / tool rows are fold-nav surfaces
@@ -995,6 +997,14 @@ impl AgentView {
                     if self.subagent_views.contains_key(&child_sid) {
                         self.open_subagent_fullscreen(child_sid);
                     }
+                }
+            }
+            2 if is_workflow => {
+                if let Some(entry) = self.scrollback.entry(idx)
+                    && let crate::scrollback::block::RenderBlock::Workflow(ref wf) = entry.block
+                {
+                    let run_id = wf.run_id.clone();
+                    self.open_workflow_detail_by_run_id(&run_id);
                 }
             }
             2 if is_prompt => {

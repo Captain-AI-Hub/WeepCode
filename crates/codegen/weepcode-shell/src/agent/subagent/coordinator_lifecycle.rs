@@ -236,6 +236,7 @@ impl SubagentCoordinator {
             description: pending.description,
             parent_prompt_id: pending.parent_prompt_id,
             parent_session_id: pending.parent_session_id,
+            owner: pending.owner,
             persona: pending.persona,
             started_at: pending.started_at,
             error,
@@ -270,6 +271,7 @@ impl SubagentCoordinator {
             description,
             parent_prompt_id,
             parent_session_id,
+            owner: SubagentOwner::Task,
             persona: None,
             started_at: std::time::Instant::now(),
             error,
@@ -288,6 +290,7 @@ impl SubagentCoordinator {
             description,
             parent_prompt_id,
             parent_session_id,
+            owner,
             persona,
             started_at,
             error,
@@ -309,6 +312,7 @@ impl SubagentCoordinator {
                     subagent_id: subagent_id.clone(),
                     parent_session_id,
                     parent_prompt_id,
+                    owner,
                     child_session_id: String::new(),
                     description: description.clone(),
                     subagent_type: subagent_type.clone(),
@@ -372,6 +376,7 @@ impl SubagentCoordinator {
             .map(|t| t.child_session_id.0.to_string())
             .unwrap_or_default();
         let parent_prompt_id = tracker.as_ref().and_then(|t| t.parent_prompt_id.clone());
+        let owner = tracker.as_ref().map(|t| t.owner.clone()).unwrap_or_default();
         let persona = tracker.as_ref().and_then(|t| t.persona.clone());
         let child_cwd = tracker
             .as_ref()
@@ -390,6 +395,7 @@ impl SubagentCoordinator {
             subagent_id: id.to_string(),
             parent_session_id,
             parent_prompt_id,
+            owner,
             child_session_id,
             description,
             subagent_type,
@@ -469,6 +475,18 @@ impl SubagentCoordinator {
         }
         for pending in self.pending.values() {
             if pending.parent_prompt_id.as_deref() == Some(parent_prompt_id) {
+                pending.cancel_token.cancel();
+            }
+        }
+    }
+    pub fn cancel_by_workflow_run_id(&mut self, workflow_run_id: &str) {
+        for tracker in self.active.values() {
+            if tracker.owner.workflow_run_id() == Some(workflow_run_id) {
+                Self::cancel_tracker(tracker);
+            }
+        }
+        for pending in self.pending.values() {
+            if pending.owner.workflow_run_id() == Some(workflow_run_id) {
                 pending.cancel_token.cancel();
             }
         }

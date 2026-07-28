@@ -132,7 +132,8 @@ fn user_echo_mode(prompt_id: &str) -> UserEchoMode {
         return UserEchoMode::PersistOnly;
     }
     match super::super::PromptOrigin::from_prompt_id(prompt_id) {
-        super::super::PromptOrigin::NotificationDrain => UserEchoMode::PersistOnly,
+        super::super::PromptOrigin::NotificationDrain
+        | super::super::PromptOrigin::WorkflowCompleted { .. } => UserEchoMode::PersistOnly,
         _ => UserEchoMode::Broadcast,
     }
 }
@@ -198,6 +199,34 @@ impl SessionActor {
                 .await;
         }
         user_images
+    }
+    pub(super) fn persist_host_turn_user_echo(&self, text: &str, prompt_id: &str) {
+        let text = text.trim();
+        if text.is_empty() {
+            return;
+        }
+        let mut chunk_meta = serde_json::Map::new();
+        chunk_meta.insert(
+            crate::session::storage::HOST_TURN_META_KEY.into(),
+            serde_json::json!(true),
+        );
+        if super::super::PromptOrigin::from_prompt_id(prompt_id).hide_user_echo_from_scrollback() {
+            chunk_meta.insert("hideFromScrollback".into(), serde_json::json!(true));
+        }
+        let update = acp::SessionUpdate::UserMessageChunk(
+            acp::ContentChunk::new(acp::ContentBlock::Text(acp::TextContent::new(
+                text.to_string(),
+            )))
+            .meta(Some(chunk_meta)),
+        );
+        let notification = acp::SessionNotification::new(self.session_info.id.clone(), update)
+            .meta(self.build_notification_meta().as_object().cloned());
+        let _ = self
+            .notifications
+            .persistence_tx
+            .send(PersistenceMsg::Update(
+                crate::session::storage::SessionUpdate::Acp(Box::new(notification)),
+            ));
     }
     #[tracing::instrument(
         name = "session.handle_prompt",
@@ -293,11 +322,19 @@ impl SessionActor {
         };
         let availability = self.command_availability().await;
         let mut pending_skill_information: Option<String> = None;
+        let (workflow_registry, named_workflows) = self.named_workflow_snapshot();
+        let original_prompt_text = prompt_blocks.iter().fold(String::new(), |mut acc, block| {
+            if let acp::ContentBlock::Text(text) = block {
+                acc.push_str(&text.text);
+            }
+            acc
+        });
         let prompt_blocks = match slash_commands::resolve(
             prompt_blocks,
             &slash_skills,
             availability,
             skill_rewrite,
+            &named_workflows,
         ) {
             Ok(blocks) => blocks,
             Err(SlashCommandOutcome::Builtin(action)) => {
@@ -333,6 +370,14 @@ impl SessionActor {
                                 return ok_end_turn(0, None);
                             }
                         }
+                    }
+                    BuiltinAction::WorkflowLaunch { name, input } => {
+                        self.persist_host_turn_user_echo(&original_prompt_text, prompt_id);
+                        let msg = self
+                            .launch_named_workflow(&workflow_registry, &name, &input)
+                            .await;
+                        self.send_slash_command_output(&msg).await;
+                        return ok_end_turn(0, None);
                     }
                     _ => return self.execute_builtin_slash_command(action).await,
                 }
@@ -627,6 +672,7 @@ impl SessionActor {
         self.inject_plan_mode_reminders().await;
         self.inject_resumed_tasks_reminder();
         self.drain_between_turn_completions().await;
+        self.inject_workflow_status_reminder().await;
         let user_message = if user_images.is_empty() {
             user_message
         } else if self.is_cursor_harness() {
@@ -673,6 +719,9 @@ impl SessionActor {
                 }
                 super::super::PromptOrigin::SubagentCompleted { .. } => {
                     ConversationItem::subagent_completed(user_message)
+                }
+                super::super::PromptOrigin::WorkflowCompleted { .. } => {
+                    ConversationItem::notification_drain(user_message)
                 }
                 super::super::PromptOrigin::NotificationDrain => {
                     ConversationItem::notification_drain(user_message)

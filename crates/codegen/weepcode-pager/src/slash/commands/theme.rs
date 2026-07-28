@@ -179,6 +179,7 @@ mod tests {
                 models: &models,
                 cwd: std::path::Path::new("."),
                 has_session_announcements: false,
+                workflows_available: false,
                 screen_mode: crate::app::ScreenMode::Fullscreen,
             };
             let items = cmd.suggest_args(&ctx, "").expect("should return items");
@@ -199,6 +200,7 @@ mod tests {
                 models: &models,
                 cwd: std::path::Path::new("."),
                 has_session_announcements: false,
+                workflows_available: false,
                 screen_mode: crate::app::ScreenMode::Fullscreen,
             };
             let items = cmd.suggest_args(&ctx, "").expect("should return items");
@@ -220,6 +222,7 @@ mod tests {
                 models: &models,
                 cwd: std::path::Path::new("."),
                 has_session_announcements: false,
+                workflows_available: false,
                 screen_mode: crate::app::ScreenMode::Fullscreen,
             };
             let items = cmd.suggest_args(&ctx, "").expect("should return items");
@@ -242,6 +245,7 @@ mod tests {
                 models: &models,
                 cwd: std::path::Path::new("."),
                 has_session_announcements: false,
+                workflows_available: false,
                 screen_mode: crate::app::ScreenMode::Fullscreen,
             };
             let items = cmd.suggest_args(&ctx, "").expect("should return items");
@@ -268,6 +272,7 @@ mod tests {
                 models: &models,
                 cwd: std::path::Path::new("."),
                 has_session_announcements: false,
+                workflows_available: false,
                 screen_mode: crate::app::ScreenMode::Fullscreen,
             };
             let items = cmd.suggest_args(&ctx, "").expect("should return items");

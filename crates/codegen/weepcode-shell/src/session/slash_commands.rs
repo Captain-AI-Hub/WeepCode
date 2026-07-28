@@ -1,5 +1,7 @@
 //! ACP slash command advertising and resolution.
 
+use std::collections::{HashMap, HashSet};
+
 use agent_client_protocol as acp;
 use weepcode_tools::implementations::skills::skill::format_skill_name;
 use weepcode_tools::implementations::skills::types::SkillInfo;
@@ -40,6 +42,8 @@ pub(crate) enum BuiltinGate {
     Hooks,
     Plugins,
     Goal,
+    WorkflowLaunches,
+    WorkflowManagement,
 }
 
 /// All built-in slash commands. Order here = display order in autocomplete.
@@ -222,6 +226,51 @@ pub(super) const BUILTIN_COMMANDS: &[BuiltinCommand] = &[
         resolve: |_args| BuiltinAction::SessionInfo,
     },
     BuiltinCommand {
+        name: "deep-research",
+        description: "Research with bounded parallel agents, cross-check evidence, and write a cited report",
+        argument_hint: Some("<query>"),
+        aliases: &[],
+        gate: BuiltinGate::WorkflowLaunches,
+        resolve: |args| BuiltinAction::DeepResearch {
+            query: args.trim().to_string(),
+        },
+    },
+    BuiltinCommand {
+        name: "workflow",
+        description: "Launch a saved workflow, or manage a run (pause, resume, stop, save)",
+        argument_hint: Some("<name> [args] | pause|resume|stop|save [name]"),
+        aliases: &[],
+        gate: BuiltinGate::WorkflowManagement,
+        resolve: |args| {
+            const OPS: [&str; 4] = ["pause", "resume", "stop", "save"];
+            let trimmed = args.trim();
+            let mut parts = trimmed.split_whitespace();
+            let first = parts.next().unwrap_or_default();
+            let second = parts.next().unwrap_or_default();
+            let first_is_op = OPS.contains(&first.to_lowercase().as_str());
+            let second_is_final_op =
+                OPS.contains(&second.to_lowercase().as_str()) && parts.next().is_none();
+            if first.is_empty() || first_is_op || second_is_final_op {
+                let (op, run_id) = if first_is_op {
+                    (
+                        first.to_lowercase(),
+                        trimmed[first.len()..].trim_start().to_string(),
+                    )
+                } else if second_is_final_op {
+                    (second.to_lowercase(), first.to_string())
+                } else {
+                    (String::new(), String::new())
+                };
+                BuiltinAction::WorkflowManage { run_id, op }
+            } else {
+                BuiltinAction::WorkflowLaunch {
+                    name: first.to_string(),
+                    input: trimmed[first.len()..].trim_start().to_string(),
+                }
+            }
+        },
+    },
+    BuiltinCommand {
         name: "goal",
         description: "Set, manage, or check an autonomous goal",
         argument_hint: Some("<objective> [--budget <tokens>] | status | pause | resume | clear"),
@@ -374,6 +423,8 @@ pub(crate) struct CommandAvailability {
     pub hooks: bool,
     pub plugins: bool,
     pub goal: bool,
+    pub workflows: bool,
+    pub workflow_management: bool,
 }
 
 impl CommandAvailability {
@@ -387,6 +438,8 @@ impl CommandAvailability {
             BuiltinGate::Hooks => self.hooks,
             BuiltinGate::Plugins => self.plugins,
             BuiltinGate::Goal => self.goal,
+            BuiltinGate::WorkflowLaunches => self.workflows,
+            BuiltinGate::WorkflowManagement => self.workflow_management,
         }
     }
 
@@ -400,6 +453,8 @@ impl CommandAvailability {
             hooks: true,
             plugins: true,
             goal: true,
+            workflows: true,
+            workflow_management: true,
         }
     }
 }
@@ -428,17 +483,20 @@ pub(crate) fn build_tools_meta(tool_names: &[String]) -> acp::Meta {
 pub(super) fn available_commands(
     skills: &[SkillInfo],
     availability: CommandAvailability,
+    workflows: &[crate::session::workflow::registry::WorkflowListing],
 ) -> Vec<acp::AvailableCommand> {
     // Detect duplicate bare names among user-invocable skills so we can
     // advertise qualified names (e.g. "local:commit") when ambiguous.
-    let mut name_counts: std::collections::HashMap<&str, usize> = std::collections::HashMap::new();
+    let mut name_counts: HashMap<&str, usize> = HashMap::new();
     for s in skills.iter().filter(|s| s.user_invocable) {
         *name_counts.entry(&s.name).or_default() += 1;
     }
+    for workflow in workflows {
+        *name_counts.entry(&workflow.name).or_default() += 1;
+    }
 
     // Collect builtin command names so skills that collide are also qualified.
-    let builtin_names: std::collections::HashSet<&str> =
-        BUILTIN_COMMANDS.iter().map(|b| b.name).collect();
+    let builtin_names: HashSet<&str> = BUILTIN_COMMANDS.iter().map(|b| b.name).collect();
 
     all_commands(skills, availability)
         .iter()
@@ -488,6 +546,32 @@ pub(super) fn available_commands(
             };
             entries
         })
+        .chain(workflows.iter().filter_map(|workflow| {
+            if !availability.workflows
+                || name_counts
+                    .get(workflow.name.as_str())
+                    .copied()
+                    .unwrap_or(0)
+                    > 1
+                || builtin_names.contains(workflow.name.as_str())
+            {
+                return None;
+            }
+            let meta = serde_json::json!({
+                "scope": "workflow",
+                "workflowSource": workflow.source,
+                "workflowPath": workflow.path,
+            })
+            .as_object()
+            .cloned();
+            Some(
+                acp::AvailableCommand::new(
+                    workflow.name.clone(),
+                    format!("Workflow: {}", workflow.description),
+                )
+                .meta(meta),
+            )
+        }))
         .collect()
 }
 
@@ -538,6 +622,7 @@ pub(crate) async fn list_commands(
     plugin_registry: Option<&weepcode_agent::plugins::PluginRegistry>,
     availability: CommandAvailability,
     compat: weepcode_tools::types::compat::CompatConfig,
+    include_project_workflows: bool,
 ) -> ListCommandsResponse {
     let skills = weepcode_agent::prompt::skills::list_skills_with_plugins(
         cwd,
@@ -546,8 +631,14 @@ pub(crate) async fn list_commands(
         compat,
     )
     .await;
+    let workflows = crate::session::workflow::registry::list_workflows(
+        include_project_workflows
+            .then_some(cwd)
+            .flatten()
+            .map(std::path::Path::new),
+    );
     ListCommandsResponse {
-        commands: available_commands(&skills, availability),
+        commands: available_commands(&skills, availability, &workflows),
     }
 }
 
@@ -640,6 +731,17 @@ pub(super) enum BuiltinAction {
     GoalPause,
     GoalResume,
     GoalClear,
+    DeepResearch {
+        query: String,
+    },
+    WorkflowManage {
+        run_id: String,
+        op: String,
+    },
+    WorkflowLaunch {
+        name: String,
+        input: String,
+    },
 }
 
 impl BuiltinAction {
@@ -671,6 +773,10 @@ impl BuiltinAction {
             | BuiltinAction::GoalPause
             | BuiltinAction::GoalResume
             | BuiltinAction::GoalClear => "goal",
+            BuiltinAction::DeepResearch { .. } => "deep-research",
+            BuiltinAction::WorkflowManage { .. } | BuiltinAction::WorkflowLaunch { .. } => {
+                "workflow"
+            }
         }
     }
 
@@ -702,6 +808,9 @@ impl BuiltinAction {
             | BuiltinAction::GoalPause
             | BuiltinAction::GoalResume
             | BuiltinAction::GoalClear => false,
+            BuiltinAction::DeepResearch { query } => !query.is_empty(),
+            BuiltinAction::WorkflowManage { run_id, op } => !run_id.is_empty() || !op.is_empty(),
+            BuiltinAction::WorkflowLaunch { input, .. } => !input.is_empty(),
         }
     }
 }
@@ -942,6 +1051,7 @@ pub(super) fn resolve(
     skills: &[SkillInfo],
     availability: CommandAvailability,
     _skill_rewrite: SkillSlashRewrite,
+    workflows: &[crate::session::workflow::registry::WorkflowListing],
 ) -> Result<Vec<acp::ContentBlock>, SlashCommandOutcome> {
     let Some((command_name, args)) = parse_slash_prefix(&prompt_blocks) else {
         return Ok(prompt_blocks);
@@ -996,6 +1106,9 @@ pub(super) fn resolve(
 
     if let Some(SlashCommand::BuiltIn(builtin)) = builtin_match {
         let action = (builtin.resolve)(args);
+        if matches!(action, BuiltinAction::WorkflowLaunch { .. }) && !availability.workflows {
+            return Ok(prompt_blocks);
+        }
         return Err(SlashCommandOutcome::Builtin(action));
     }
 
@@ -1017,6 +1130,19 @@ pub(super) fn resolve(
             blocks: prompt_blocks,
             skills: parsed_skills,
         });
+    }
+
+    if availability.workflows
+        && let Some(workflow) = workflows
+            .iter()
+            .find(|workflow| workflow.name == command_name)
+    {
+        return Err(SlashCommandOutcome::Builtin(
+            BuiltinAction::WorkflowLaunch {
+                name: workflow.name.clone(),
+                input: args.to_string(),
+            },
+        ));
     }
 
     // No known skill matched — pass through as regular user input.
@@ -1233,7 +1359,8 @@ mod tests {
     fn yolo_alias_resolves_to_always_approve() {
         // /yolo should resolve via alias to the always-approve command
         let blocks = vec![text_block("/yolo on")];
-        let outcome = resolve(blocks, &[], all_gated(), SkillSlashRewrite::default()).unwrap_err();
+        let outcome =
+            resolve(blocks, &[], all_gated(), SkillSlashRewrite::default(), &[]).unwrap_err();
         assert!(matches!(
             outcome,
             SlashCommandOutcome::Builtin(BuiltinAction::SetYolo { enabled: true })
@@ -1249,6 +1376,7 @@ mod tests {
             &[],
             all_gated(),
             SkillSlashRewrite::default(),
+            &[],
         )
         .unwrap_err();
         assert!(matches!(
@@ -1265,6 +1393,7 @@ mod tests {
             &[],
             all_gated(),
             SkillSlashRewrite::default(),
+            &[],
         )
         .unwrap_err();
         assert!(matches!(
@@ -1281,6 +1410,7 @@ mod tests {
             &skills,
             all_gated(),
             SkillSlashRewrite::default(),
+            &[],
         )
         .unwrap_err();
         let skill = first_skill(outcome);
@@ -1292,6 +1422,7 @@ mod tests {
             &skills,
             all_gated(),
             SkillSlashRewrite::default(),
+            &[],
         )
         .unwrap_err();
         let skill = first_skill(outcome);
@@ -1345,6 +1476,7 @@ mod tests {
             &[],
             all_gated(),
             SkillSlashRewrite::default(),
+            &[],
         )
         .unwrap_err();
         let blocks = match outcome {
@@ -1385,6 +1517,7 @@ mod tests {
             &[],
             all_gated(),
             SkillSlashRewrite::default(),
+            &[],
         )
         .unwrap_err();
         let SlashCommandOutcome::InvokeSkill { blocks, .. } = outcome else {
@@ -1412,6 +1545,7 @@ mod tests {
             &skills,
             all_gated(),
             SkillSlashRewrite::Passthrough,
+            &[],
         )
         .unwrap_err();
         // Original text is preserved in blocks.
@@ -1422,6 +1556,7 @@ mod tests {
             &skills,
             all_gated(),
             SkillSlashRewrite::Passthrough,
+            &[],
         )
         .unwrap_err();
         assert_eq!(invoke_text(outcome), "/commit");
@@ -1435,7 +1570,8 @@ mod tests {
                 vec![text_block("fix the login bug")],
                 &skills,
                 all_gated(),
-                SkillSlashRewrite::default()
+                SkillSlashRewrite::default(),
+                &[],
             )
             .is_ok()
         );
@@ -1444,7 +1580,8 @@ mod tests {
                 vec![text_block("/unknown")],
                 &skills,
                 all_gated(),
-                SkillSlashRewrite::default()
+                SkillSlashRewrite::default(),
+                &[],
             )
             .is_ok()
         );
@@ -1458,7 +1595,8 @@ mod tests {
                 vec![text_block("/internal-only")],
                 &skills,
                 all_gated(),
-                SkillSlashRewrite::default()
+                SkillSlashRewrite::default(),
+                &[],
             )
             .is_ok()
         );
@@ -1472,6 +1610,7 @@ mod tests {
             &skills,
             all_gated(),
             SkillSlashRewrite::default(),
+            &[],
         )
         .unwrap_err();
         assert!(matches!(outcome, SlashCommandOutcome::Builtin(_)));
@@ -1482,7 +1621,7 @@ mod tests {
     #[test]
     fn available_commands_orders_builtins_first() {
         let skills = vec![make_skill("commit", true), make_skill("deploy", true)];
-        let commands = available_commands(&skills, all_gated());
+        let commands = available_commands(&skills, all_gated(), &[]);
         let names: Vec<&str> = commands.iter().map(|c| c.name.as_str()).collect();
         assert_eq!(
             names,
@@ -1510,7 +1649,7 @@ mod tests {
     }
 
     fn advertised_names(availability: CommandAvailability) -> Vec<String> {
-        available_commands(&[], availability)
+        available_commands(&[], availability, &[])
             .into_iter()
             .map(|c| c.name)
             .collect()
@@ -1597,6 +1736,7 @@ mod tests {
                 &[],
                 availability,
                 SkillSlashRewrite::default(),
+                &[],
             )
             .is_ok(),
             "expected pass-through (Ok), got an outcome",
@@ -1618,6 +1758,7 @@ mod tests {
                 &[],
                 availability,
                 SkillSlashRewrite::default(),
+                &[],
             )
             .is_ok(),
             "expected pass-through (Ok), got an outcome",
@@ -1746,7 +1887,7 @@ mod tests {
     #[test]
     fn available_commands_populates_acp_fields() {
         let skills = vec![make_skill("commit", true)];
-        let commands = available_commands(&skills, all_gated());
+        let commands = available_commands(&skills, all_gated(), &[]);
 
         let builtin = commands.iter().find(|c| c.name == "compact").unwrap();
         assert!(builtin.input.is_some());
@@ -1780,6 +1921,7 @@ mod tests {
             &[],
             all_gated(),
             SkillSlashRewrite::default(),
+            &[],
         )
         .unwrap_err();
         assert!(matches!(
@@ -1796,6 +1938,7 @@ mod tests {
             &skills,
             all_gated(),
             SkillSlashRewrite::default(),
+            &[],
         )
         .unwrap_err();
         assert!(matches!(outcome, SlashCommandOutcome::Builtin(_)));
@@ -1822,6 +1965,7 @@ mod tests {
             &[],
             all_gated(),
             SkillSlashRewrite::default(),
+            &[],
         )
         .unwrap_err();
         assert!(matches!(
@@ -1838,6 +1982,7 @@ mod tests {
             &skills,
             all_gated(),
             SkillSlashRewrite::default(),
+            &[],
         )
         .unwrap_err();
         assert!(matches!(outcome, SlashCommandOutcome::Builtin(_)));
@@ -1896,7 +2041,8 @@ mod tests {
                 vec![text_block("/commit")],
                 &skills,
                 all_gated(),
-                SkillSlashRewrite::default()
+                SkillSlashRewrite::default(),
+                &[],
             )
             .is_ok()
         );
@@ -1915,6 +2061,7 @@ mod tests {
             &skills,
             all_gated(),
             SkillSlashRewrite::default(),
+            &[],
         )
         .unwrap_err();
         let skill = first_skill(outcome);
@@ -1927,6 +2074,7 @@ mod tests {
             &skills,
             all_gated(),
             SkillSlashRewrite::default(),
+            &[],
         )
         .unwrap_err();
         let skill = first_skill(outcome);
@@ -1941,7 +2089,7 @@ mod tests {
             make_scoped_skill("commit", SkillScope::User),
             make_skill("deploy", true),
         ];
-        let commands = available_commands(&skills, all_gated());
+        let commands = available_commands(&skills, all_gated(), &[]);
         let names: Vec<&str> = commands.iter().map(|c| c.name.as_str()).collect();
         // Duplicate "commit" skills should use qualified names.
         assert!(names.contains(&"local:commit"));
@@ -1965,7 +2113,7 @@ mod tests {
             make_scoped_skill("compact", SkillScope::Local),
             make_skill("deploy", true),
         ];
-        let commands = available_commands(&skills, all_gated());
+        let commands = available_commands(&skills, all_gated(), &[]);
         let names: Vec<&str> = commands.iter().map(|c| c.name.as_str()).collect();
         // The skill should be advertised under its qualified name.
         assert!(
@@ -1985,7 +2133,7 @@ mod tests {
     #[test]
     fn available_commands_qualifies_plugin_skill_colliding_with_client_builtin() {
         let skills = vec![make_plugin_skill("acme", "login")];
-        let commands = available_commands(&skills, all_gated());
+        let commands = available_commands(&skills, all_gated(), &[]);
         let names: Vec<&str> = commands.iter().map(|c| c.name.as_str()).collect();
 
         assert!(
@@ -2004,7 +2152,7 @@ mod tests {
     #[test]
     fn available_commands_offers_bare_and_qualified_for_noncolliding_plugin_skill() {
         let skills = vec![make_plugin_skill("acme", "deploy")];
-        let commands = available_commands(&skills, all_gated());
+        let commands = available_commands(&skills, all_gated(), &[]);
         let names: Vec<&str> = commands.iter().map(|c| c.name.as_str()).collect();
         assert!(
             names.contains(&"acme:deploy"),
@@ -2019,7 +2167,7 @@ mod tests {
     #[test]
     fn available_commands_plugin_skill_colliding_with_shell_builtin_is_qualified_only() {
         let skills = vec![make_plugin_skill("acme", "compact")];
-        let commands = available_commands(&skills, all_gated());
+        let commands = available_commands(&skills, all_gated(), &[]);
         let names: Vec<&str> = commands.iter().map(|c| c.name.as_str()).collect();
         assert!(
             names.contains(&"acme:compact"),
@@ -2039,7 +2187,7 @@ mod tests {
             make_plugin_skill("acme", "login"),
             make_plugin_skill("globex", "login"),
         ];
-        let commands = available_commands(&skills, all_gated());
+        let commands = available_commands(&skills, all_gated(), &[]);
         let names: Vec<&str> = commands.iter().map(|c| c.name.as_str()).collect();
         assert!(names.contains(&"acme:login"), "got: {names:?}");
         assert!(names.contains(&"globex:login"), "got: {names:?}");
@@ -2057,6 +2205,7 @@ mod tests {
             &skills,
             all_gated(),
             SkillSlashRewrite::default(),
+            &[],
         )
         .unwrap_err();
         let skill = first_skill(outcome);
@@ -2075,6 +2224,7 @@ mod tests {
             &skills,
             all_gated(),
             SkillSlashRewrite::default(),
+            &[],
         )
         .unwrap_err();
         assert!(matches!(outcome, SlashCommandOutcome::Builtin(_)));
@@ -2085,6 +2235,7 @@ mod tests {
             &skills,
             all_gated(),
             SkillSlashRewrite::default(),
+            &[],
         )
         .unwrap_err();
         let skill = first_skill(outcome);
@@ -2094,7 +2245,7 @@ mod tests {
 
     /// Collect the advertised command names for the given availability.
     fn advertised_names_with(availability: CommandAvailability) -> Vec<String> {
-        available_commands(&[], availability)
+        available_commands(&[], availability, &[])
             .into_iter()
             .map(|c| c.name)
             .collect()
@@ -2204,6 +2355,7 @@ mod tests {
             &[],
             all_gated(),
             SkillSlashRewrite::default(),
+            &[],
         )
         .unwrap_err();
         assert!(matches!(
@@ -2219,6 +2371,7 @@ mod tests {
             &[],
             all_gated(),
             SkillSlashRewrite::default(),
+            &[],
         )
         .unwrap_err();
         assert!(matches!(
@@ -2240,6 +2393,7 @@ mod tests {
             &[],
             availability,
             SkillSlashRewrite::default(),
+            &[],
         );
         assert!(
             outcome.is_err(),
@@ -2260,6 +2414,7 @@ mod tests {
                 &[],
                 availability,
                 SkillSlashRewrite::default(),
+                &[],
             )
             .is_ok(),
             "expected pass-through (Ok) when memory_configured is false",
@@ -2361,7 +2516,7 @@ mod tests {
 
     fn resolve_goal(args: &str) -> BuiltinAction {
         let blocks = vec![text_block(&format!("/goal {args}"))];
-        match resolve(blocks, &[], all_gated(), SkillSlashRewrite::default()).unwrap_err() {
+        match resolve(blocks, &[], all_gated(), SkillSlashRewrite::default(), &[]).unwrap_err() {
             SlashCommandOutcome::Builtin(action) => action,
             _ => panic!("expected Builtin outcome"),
         }

@@ -35,6 +35,7 @@ use crate::implementations::weepcode_build::update_goal::UpdateGoalInput;
 use crate::implementations::weepcode_build::video_gen::{ImageToVideoInput, ReferenceToVideoInput};
 use crate::implementations::weepcode_build::web_fetch::WebFetchInput;
 use crate::implementations::weepcode_build::web_search::WebSearchInput;
+use crate::implementations::weepcode_build::workflow::WorkflowToolInput;
 use serde::{Deserialize, Serialize};
 use weepcode_tool_types::KillTaskToolInput;
 use weepcode_tool_types::TaskOutputToolInput;
@@ -99,6 +100,7 @@ pub enum ToolInput {
     ),
     SchedulerList(crate::implementations::weepcode_build::scheduler::list::SchedulerListInput),
     UpdateGoal(UpdateGoalInput),
+    Workflow(WorkflowToolInput),
     /// Dynamic input for runtime-registered tools (MCP, etc.)
     Dynamic(serde_json::Value),
 }

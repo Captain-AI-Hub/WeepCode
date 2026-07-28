@@ -59,7 +59,7 @@ fn budget_color(pct: f32, theme: &Theme) -> Color {
 
 /// Format elapsed milliseconds as a compact human-readable duration.
 /// Same style as `goal_orchestrator::format_elapsed` — keep in sync.
-fn format_elapsed(ms: u64) -> String {
+pub(crate) fn format_elapsed(ms: u64) -> String {
     let total_secs = ms / 1000;
     let hours = total_secs / 3600;
     let mins = (total_secs % 3600) / 60;
@@ -194,7 +194,7 @@ fn wrap_pause_message_lines(text: &str, width: u16) -> Vec<String> {
 /// ellipsis if truncated. Uses display width (not char count) so CJK
 /// and emoji characters measure correctly — matches the
 /// `wrap_pause_message_lines` pattern.
-fn truncate_to_width(text: &str, budget: usize) -> String {
+pub(crate) fn truncate_to_width(text: &str, budget: usize) -> String {
     use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 
     if UnicodeWidthStr::width(text) <= budget {
@@ -220,7 +220,7 @@ fn truncate_to_width(text: &str, budget: usize) -> String {
 /// timestamp, pause reason) can't break a rendered row even if ratatui's own
 /// filter regresses. `keep_newlines` preserves `\n` for the pause-reason
 /// wrapper (which splits on it before render); single-row sinks pass `false`.
-fn strip_control_chars(s: &str, keep_newlines: bool) -> String {
+pub(crate) fn strip_control_chars(s: &str, keep_newlines: bool) -> String {
     s.chars()
         .map(|c| {
             if c.is_control() && !(keep_newlines && c == '\n') {

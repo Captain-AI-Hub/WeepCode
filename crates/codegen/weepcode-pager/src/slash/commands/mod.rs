@@ -59,6 +59,7 @@ pub mod toggle_mouse_reporting;
 pub mod transcript;
 pub mod view_plan;
 pub mod vim_mode;
+pub mod workflows;
 use super::command::SlashCommand;
 use std::sync::Arc;
 /// All pager-local builtin commands, in display order.
@@ -105,6 +106,7 @@ pub fn builtin_commands() -> Vec<Arc<dyn SlashCommand>> {
         Arc::new(view_plan::ViewPlanCommand),
         Arc::new(resume::ResumeCommand),
         Arc::new(mcps::McpsCommand),
+        Arc::new(workflows::WorkflowsCommand),
         Arc::new(btw::BtwCommand),
         Arc::new(recap::RecapCommand),
         Arc::new(terminal_setup::TerminalSetupCommand),
@@ -379,6 +381,7 @@ mod tests {
             models: &models,
             cwd: std::path::Path::new("."),
             has_session_announcements: false,
+            workflows_available: false,
             screen_mode: crate::app::ScreenMode::Fullscreen,
         };
         let cmd = model::ModelCommand;
@@ -402,6 +405,7 @@ mod tests {
             models: &models,
             cwd: std::path::Path::new("."),
             has_session_announcements: false,
+            workflows_available: false,
             screen_mode: crate::app::ScreenMode::Fullscreen,
         };
         let cmd = model::ModelCommand;
@@ -483,6 +487,7 @@ mod tests {
             models: &models,
             cwd: std::path::Path::new("."),
             has_session_announcements: false,
+            workflows_available: false,
             screen_mode: crate::app::ScreenMode::Fullscreen,
         };
         assert!(

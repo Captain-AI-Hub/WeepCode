@@ -9,7 +9,8 @@
 //!
 //! - `SubagentBackendResource` — wraps an `Arc<dyn SubagentBackend>` that
 //!   abstracts spawn/query/cancel (see [`super::backend`])
-//! - `SubagentDepthCounter` — tracks nesting depth (max 1, no recursive spawning)
+//! - `SubagentDepthCounter` — current nesting depth
+//! - `MaxSubagentDepth` — configured max nesting depth
 //! - `SessionIdResource` — carries the current session ID for parent scoping
 //! - `TaskModelValidator` — validates explicit model slugs before background spawn
 //!
@@ -20,9 +21,38 @@ use std::sync::Arc;
 
 use educe::Educe;
 use tokio::sync::{mpsc, oneshot};
+use tokio_util::sync::CancellationToken;
 use weepcode_tool_types::{SubagentCapabilityMode, SubagentIsolationMode, WaitMode};
 
 use crate::register_resource;
+
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub enum SubagentOwner {
+    #[default]
+    Task,
+    Workflow {
+        run_id: String,
+    },
+}
+
+impl SubagentOwner {
+    pub fn workflow(run_id: impl Into<String>) -> Self {
+        Self::Workflow {
+            run_id: run_id.into(),
+        }
+    }
+
+    pub fn workflow_run_id(&self) -> Option<&str> {
+        match self {
+            Self::Task => None,
+            Self::Workflow { run_id } => Some(run_id),
+        }
+    }
+
+    pub fn is_workflow(&self) -> bool {
+        matches!(self, Self::Workflow { .. })
+    }
+}
 
 // Request / Response
 
@@ -60,9 +90,12 @@ pub struct SubagentRequest {
     /// between-turn "idle completion" reminder — used by harness-internal
     /// subagents like the goal planner/classifier that the model must never see.
     pub surface_completion: bool,
+    pub await_to_completion: bool,
     /// Harness-only: seed child with normalized parent conversation, then append
     /// `prompt`. Not on TaskToolInput. Successful `resume_from` takes precedence.
     pub fork_context: bool,
+    pub owner: SubagentOwner,
+    pub cancel_token: CancellationToken,
     /// Oneshot channel for the coordinator to send back the result.
     #[educe(Debug(ignore))]
     pub result_tx: oneshot::Sender<SubagentResult>,
@@ -105,6 +138,8 @@ pub struct SubagentRuntimeOverrides {
     /// (implementer vs explorer). `None` for every non-goal spawn ⇒ the parent
     /// agent decides the flavor (unchanged behavior).
     pub harness_agent_type: Option<String>,
+    pub output_token_budget: Option<u64>,
+    pub output_schema: Option<serde_json::Value>,
 }
 
 /// Re-export of [`weepcode_tool_types::is_not_sentinel`] for existing call sites.
@@ -325,6 +360,9 @@ pub struct SubagentResult {
     pub duration_ms: u64,
     /// Total tokens consumed by the subagent's context window.
     pub tokens_used: u64,
+    pub output_tokens_used: u64,
+    pub total_tokens_used: u64,
+    pub output_usage_incomplete: bool,
     /// Path to the isolated worktree if one was created.
     pub worktree_path: Option<String>,
     /// Set when a blocking subagent exceeded its await budget and was
@@ -347,6 +385,9 @@ impl Default for SubagentResult {
             turns: 0,
             duration_ms: 0,
             tokens_used: 0,
+            output_tokens_used: 0,
+            total_tokens_used: 0,
+            output_usage_incomplete: false,
             worktree_path: None,
             backgrounded: false,
         }
@@ -453,6 +494,7 @@ impl SubagentSnapshotStatus {
 pub enum SubagentCancelTarget {
     SubagentId(String),
     ParentPromptId(String),
+    WorkflowRunId(String),
 }
 
 /// Cancel request sent by KillTaskTool or session cancellation paths,
@@ -460,6 +502,7 @@ pub enum SubagentCancelTarget {
 #[derive(Educe)]
 #[educe(Debug)]
 pub struct SubagentCancelRequest {
+    pub parent_session_id: Option<String>,
     pub target: SubagentCancelTarget,
     #[educe(Debug(ignore))]
     pub respond_to: oneshot::Sender<SubagentCancelOutcome>,
@@ -755,10 +798,7 @@ pub struct SubagentListActiveRequest {
     pub respond_to: oneshot::Sender<Vec<ActiveSubagentSummary>>,
 }
 
-/// Tracks nesting depth. Injected into child's Resources with depth+1.
-///
-/// Top-level sessions start at depth 0. Each child increments by 1.
-/// `TaskTool` rejects spawns when `depth >= MAX_SUBAGENT_DEPTH`.
+/// Current nesting depth (top-level = 0; child = parent + 1).
 #[derive(Debug, Clone)]
 pub struct SubagentDepthCounter(pub u32);
 
@@ -767,6 +807,12 @@ register_resource!(
     "SubagentDepthCounter",
     SubagentDepthCounter
 );
+
+/// Host-injected max nesting depth; absent -> [`super::MAX_SUBAGENT_DEPTH`].
+#[derive(Debug, Clone, Copy)]
+pub struct MaxSubagentDepth(pub u32);
+
+register_resource!("weepcode_build", "MaxSubagentDepth", MaxSubagentDepth);
 
 /// Session-scoped validator for model-facing `Task.model` arguments.
 ///

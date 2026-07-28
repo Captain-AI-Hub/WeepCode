@@ -675,6 +675,10 @@ pub enum SessionCommand {
         /// Short instruction appended as a verbatim user message.
         prompt_text: String,
     },
+    WorkflowCompletionTurn {
+        run_id: String,
+        revision: u64,
+    },
     /// Take turn messages from the chat state actor (proxied from mvp_agent).
     TakeTurnMessages {
         respond_to: oneshot::Sender<Option<weepcode_chat_state::TurnCapture>>,

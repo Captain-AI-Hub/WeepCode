@@ -626,6 +626,20 @@ pub(super) fn dispatch_task_result(result: TaskResult, app: &mut AppView) -> Vec
             }
             vec![]
         }
+        TaskResult::WorkflowsListLoaded { agent_id, result } => {
+            use crate::views::extensions_modal::TabDataState;
+            if let Some(agent) = app.agents.get_mut(&agent_id)
+                && let Some(ref mut modal) = agent.extensions_modal
+            {
+                modal.workflows_data = match result {
+                    Ok(workflows) => TabDataState::Loaded(workflows),
+                    Err(e) => TabDataState::Error(e),
+                };
+                modal.pending_action = None;
+                modal.pending_entry_index = None;
+            }
+            vec![]
+        }
         TaskResult::SkillsToggleDone { agent_id, result } => {
             handle_skills_toggle_done(app, agent_id, result)
         }

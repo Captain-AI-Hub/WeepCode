@@ -99,6 +99,8 @@ pub struct AppCtx<'a> {
     pub cwd: &'a std::path::Path,
     /// Session announcements (critical or promo) exist (gates `/announcements` visibility).
     pub has_session_announcements: bool,
+    /// Workflow runtime is available for this session.
+    pub workflows_available: bool,
     /// Effective render mode of this process (gates `/minimal` and
     /// `/fullscreen` visibility). Same source of truth as
     /// [`CommandExecCtx::screen_mode`], carried by the owning

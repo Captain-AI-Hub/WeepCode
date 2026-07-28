@@ -121,6 +121,7 @@ pub(crate) struct AgentRebuildSpec {
     pub monitor_event_buffer: Option<MonitorEventBuffer>,
     pub user_question_tx: UnboundedSender<UserQuestionRequest>,
     pub subagent_depth: u32,
+    pub subagents_max_depth: u32,
     pub session_id_str: String,
     pub respect_gitignore: bool,
     pub path_not_found_hints: bool,
@@ -215,6 +216,7 @@ impl AgentRebuildSpec {
             monitor_event_buffer,
             user_question_tx,
             subagent_depth,
+            subagents_max_depth,
             session_id_str,
             respect_gitignore,
             path_not_found_hints,
@@ -320,13 +322,17 @@ impl AgentRebuildSpec {
                 ChannelBackend, SubagentBackendResource,
             };
             use weepcode_tools::implementations::weepcode_build::task::types::{
-                SessionIdResource, SubagentDepthCounter, SubagentEventSender,
+                MaxSubagentDepth, SessionIdResource, SubagentDepthCounter, SubagentEventSender,
             };
             let backend = SubagentBackendResource(Arc::new(ChannelBackend::new(event_tx.clone())));
             agent.tool_bridge().update_resource(backend).await;
             agent
                 .tool_bridge()
                 .update_resource(SubagentDepthCounter(*subagent_depth))
+                .await;
+            agent
+                .tool_bridge()
+                .update_resource(MaxSubagentDepth(*subagents_max_depth))
                 .await;
             agent
                 .tool_bridge()
@@ -417,6 +423,8 @@ pub(crate) fn test_rebuild_spec_default() -> Arc<AgentRebuildSpec> {
         monitor_event_buffer: None,
         user_question_tx: uq_tx,
         subagent_depth: 0,
+        subagents_max_depth:
+            weepcode_tools::implementations::weepcode_build::task::MAX_SUBAGENT_DEPTH,
         session_id_str: "test-session".to_string(),
         respect_gitignore: false,
         path_not_found_hints: false,

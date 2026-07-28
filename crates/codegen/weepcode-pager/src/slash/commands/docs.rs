@@ -186,6 +186,7 @@ mod tests {
             models: &models,
             cwd,
             has_session_announcements: false,
+            workflows_available: false,
             screen_mode: crate::app::ScreenMode::Fullscreen,
         };
         let items = DocsCommand.suggest_args(&ctx, "").expect("suggestions");

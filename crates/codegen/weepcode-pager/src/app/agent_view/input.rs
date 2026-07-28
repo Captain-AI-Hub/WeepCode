@@ -98,6 +98,13 @@ impl AgentView {
             && !self.modal_owns_input()
             && self.jump_state.is_none()
     }
+
+    pub(crate) fn workflow_runs_newest_first(
+        &self,
+    ) -> Vec<&crate::views::workflows::WorkflowRunSnapshot> {
+        self.workflow_runs.iter().rev().collect()
+    }
+
     /// No per-pane `Esc` consumer is pending (text selection, link highlight,
     /// goal detail, rewind overlay, open `/btw` panel, or open `/jump` picker),
     /// so `Esc` is free to back out of the dashboard overlay rather than
@@ -380,6 +387,9 @@ impl AgentView {
                 Event::Mouse(mouse) => self.handle_gboom_mouse(mouse),
                 _ => InputOutcome::Changed,
             };
+        }
+        if let Some(outcome) = self.handle_workflows_overlay_input(ev) {
+            return outcome;
         }
         if self.show_goal_detail && self.goal_state.is_some() {
             if let Event::Key(key) = ev

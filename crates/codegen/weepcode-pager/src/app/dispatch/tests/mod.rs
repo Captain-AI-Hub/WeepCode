@@ -317,6 +317,7 @@ fn make_test_subagent(child_sid: &str, sa_id: &str) -> crate::app::subagent::Sub
         context_source: None,
         resumed_from: None,
         capability_mode: None,
+        workflow_run_id: None,
         context_normalized: false,
         parent_prompt_id: None,
         started_at: std::time::Instant::now(),

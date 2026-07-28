@@ -2,6 +2,7 @@
 
 > 本文档是对本仓库的深度审计结果，描述整体架构、关键数据流与改造方向。
 > 最后更新：2026-07-18（初次审计）
+> 开发导航和 agent 调度地图见 `docs/project-map.md`。
 
 ## 1. 项目概览
 
@@ -31,6 +32,7 @@ Layer 3  Agent 运行时    weepcode-shell            ★ 核心单体：MvpAgen
                          weepcode-sampler          HTTP/SSE 推理客户端（三种 wire 格式）
                          weepcode-sampling-types   内部会话模型 + 各后端 wire 类型
                          weepcode-tools(-api) / weepcode-tool-{protocol,runtime,types} / weepcode-mcp / weepcode-memory
+                         weepcode-workflow         Rhai workflow 引擎（Deep Research / 自定义 workflow）
 Layer 4  配置/基础设施   weepcode-config(-types) / weepcode-paths / weepcode-env / weepcode-auth / weepcode-http
                          weepcode-secrets（仅脱敏，非密钥库）/ weepcode-sandbox / weepcode-workspace* / 等
 Layer 5  外围产品功能    weepcode-telemetry / weepcode-announcements
@@ -69,6 +71,25 @@ TUI 内部架构：`Action`（输入意图）→ `dispatch`（同步状态变更
 7. 渲染：shell 发 ACP `SessionNotification` + `weepcode/*` 扩展 → `AcpUpdateTracker`（acp/tracker.rs）→ `RenderBlock` → ratatui
 
 关键类型：`MvpAgent`、`SessionActor`、`ConversationRequest/Response`、`SamplingEvent`、`AcpUpdateTracker`、`AppView/AgentView`、`Action/Effect/TaskResult`。
+
+## 4.1 Workflow / Deep Research 数据流
+
+Deep Research 是内置 workflow，运行在 shell 侧，pager 只负责显示和交互。
+
+1. 用户执行 `/deep-research <query>`，或模型调用 `workflow` tool。
+2. shell 的 `WorkflowRegistry` 解析内置脚本、项目 `.weepcode/workflows/` 和用户
+   `~/.weepcode/workflows/` 中的 Rhai workflow。
+3. `WorkflowManager` 创建 `run_id`、session 内 display handle、journal 和 `WorkflowRunStore` 持久化记录。
+4. `weepcode-workflow` 执行 Rhai 脚本；脚本通过 host service 调用 `agent()` / `parallel()`。
+5. 这些调用进入现有 subagent coordinator，创建 child `SessionActor`，复用模型、工具、权限、MCP、hooks、
+   token usage 和取消机制；`workflow` tool 本身始终只允许从顶层会话启动。
+6. `WorkflowTracker` 汇总 phase、agent roster、预算、暂停/恢复/停止/完成状态，并通过
+   `WorkflowUpdated` ACP notification 发给 pager。
+7. pager 的 `workflow_ingest` 生成 scrollback `WorkflowBlock`，同时更新 `/workflows` overlay、任务面板、
+   状态栏和 `/tasks` 文本块。workflow 内部 subagent 带 `workflow_run_id` owner，不重复显示在普通 subagent 列表。
+
+持久化位置在 session 目录下的 `workflows/<run_id>/`，核心文件包括 `state.json` 和 ack/tombstone 信息。
+恢复会话时，shell 读取 persisted workflow runs；pager 以 revision 去重并合并 live/restored 快照。
 
 ## 5. 推理栈（已实现多后端，改造的地基）
 

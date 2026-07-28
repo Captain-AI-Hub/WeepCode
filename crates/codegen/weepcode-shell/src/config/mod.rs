@@ -224,6 +224,12 @@ impl MemoryConfig {
 pub struct SubagentsConfig {
     /// Whether subagent support is enabled.
     pub enabled: bool,
+    /// Raw `[subagents] max_depth` value.
+    ///
+    /// This is kept signed so out-of-range values can parse and be clamped by
+    /// [`Self::resolve_max_depth`] instead of making the whole config invalid.
+    #[serde(default)]
+    pub max_depth: Option<i64>,
     /// Per-subagent model ID overrides.
     /// Keys are agent names, values are model IDs that must exist in the
     /// available models registry. Parsed from `[subagents.models]` in config.toml.
@@ -434,6 +440,57 @@ impl SubagentsConfig {
         let roles_dir = cwd.join(".weepcode").join("roles");
         self.discover_roles_in_dir(&roles_dir);
     }
+    pub const ENV_MAX_DEPTH: &'static str = "WEEPCODE_SUBAGENTS_MAX_DEPTH";
+    pub const DEFAULT_MAX_DEPTH: u32 = 1;
+
+    /// Clamp to `1..=u32::MAX`. Values below 1 warn and become 1 so nesting is
+    /// never accidentally disabled.
+    pub fn clamp_max_depth(raw: i64, source: &str) -> u32 {
+        if raw < i64::from(Self::DEFAULT_MAX_DEPTH) {
+            tracing::warn!(
+                source,
+                value = raw,
+                "subagents max_depth < 1; clamping to 1"
+            );
+            Self::DEFAULT_MAX_DEPTH
+        } else if raw > i64::from(u32::MAX) {
+            tracing::warn!(
+                source,
+                value = raw,
+                "subagents max_depth exceeds u32::MAX; clamping"
+            );
+            u32::MAX
+        } else {
+            raw as u32
+        }
+    }
+
+    /// Precedence: env > TOML > remote > [`Self::DEFAULT_MAX_DEPTH`].
+    ///
+    /// Depth 0 is the top-level session; a child is parent + 1. Spawn is
+    /// rejected when `depth >= max`. So `max = 1` allows only top-level spawns;
+    /// nested spawns from a first-level subagent need `max >= 2`.
+    pub fn resolve_max_depth(env: Option<&str>, config: Option<i64>, remote: Option<u32>) -> u32 {
+        if let Some(raw) = env {
+            match raw.trim().parse::<i64>() {
+                Ok(value) => return Self::clamp_max_depth(value, "env"),
+                Err(_) => {
+                    tracing::warn!(
+                        value = %raw,
+                        "invalid WEEPCODE_SUBAGENTS_MAX_DEPTH (expected integer); ignoring"
+                    );
+                }
+            }
+        }
+        if let Some(value) = config {
+            return Self::clamp_max_depth(value, "config");
+        }
+        if let Some(value) = remote {
+            return Self::clamp_max_depth(i64::from(value), "remote");
+        }
+        Self::DEFAULT_MAX_DEPTH
+    }
+
     /// Resolve the final subagents config from all sources (in priority order):
     /// 1. CLI flag `--subagents` (absolute highest — always enables)
     /// 2. `WEEPCODE_SUBAGENTS` env var: `1`/`true` enables, `0`/`false` force-disables

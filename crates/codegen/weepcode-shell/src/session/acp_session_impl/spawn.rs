@@ -137,6 +137,7 @@ pub(crate) async fn spawn_session_actor(
     persisted_plan_mode: Option<crate::session::plan_mode::PlanModeSnapshot>,
     persisted_goal_mode: Option<crate::session::goal_tracker::GoalOrchestration>,
     persisted_announcement_state: Option<crate::session::announcement_state::AnnouncementState>,
+    persisted_workflow_runs: Vec<crate::session::workflow::store::RestoredWorkflowRun>,
     memory_config: Option<crate::config::MemoryConfig>,
     managed_mcp_handle: crate::session::managed_mcp::ManagedMcpStateHandle,
     managed_mcp_expires_at: Option<chrono::DateTime<chrono::Utc>>,
@@ -155,6 +156,7 @@ pub(crate) async fn spawn_session_actor(
     write_file_enabled: bool,
     goal_enabled: bool,
     subagents_enabled: bool,
+    subagents_max_depth: u32,
     ask_user_question_enabled: bool,
     client_hooks: crate::extensions::hooks::ClientHooks,
     prompt_display_cwd: Option<String>,
@@ -829,6 +831,7 @@ pub(crate) async fn spawn_session_actor(
         monitor_event_buffer: tool_context.monitor_event_buffer.clone(),
         user_question_tx: user_question_tx.clone(),
         subagent_depth: tool_context.subagent_depth,
+        subagents_max_depth,
         session_id_str: session_info.id.0.to_string(),
         respect_gitignore,
         path_not_found_hints,
@@ -1015,6 +1018,224 @@ pub(crate) async fn spawn_session_actor(
     let (goal_update_tx, goal_update_rx) = tokio::sync::mpsc::unbounded_channel::<
         weepcode_tools::implementations::weepcode_build::update_goal::UpdateGoalEnvelope,
     >();
+    crate::session::workflow::registry::warm_builtin_cache();
+    let background_workflows_enabled = true;
+    let workflow_session_dir = crate::session::persistence::session_dir(&session_info);
+    let (workflow_store, workflow_snapshots) =
+        crate::session::workflow::store::WorkflowRunStore::from_restored(
+            Some(workflow_session_dir.clone()),
+            persistence.tx.clone(),
+            persisted_workflow_runs,
+        );
+    let workflow_tracker = Arc::new(parking_lot::Mutex::new(
+        crate::session::workflow::tracker::WorkflowTracker::from_snapshot(workflow_snapshots),
+    ));
+    let workflow_notify = crate::session::workflow::notify::WorkflowNotifySender::new(
+        session_info.id.clone(),
+        gateway.clone(),
+        persistence.tx.clone(),
+        workflow_store.clone(),
+    );
+    for state in workflow_tracker.lock().snapshot() {
+        workflow_notify.emit(&state, state.elapsed_ms_floor, 0);
+    }
+    let workflow_manager = Arc::new(tokio::sync::Mutex::new(
+        crate::session::workflow::manager::WorkflowManager::new(
+            session_info.id.0.to_string(),
+            Some(workflow_session_dir.clone()),
+            std::path::PathBuf::from(session_info.cwd.as_str()),
+            workflow_tracker.clone(),
+            workflow_store,
+            workflow_notify,
+            tool_context.subagent_event_tx.clone().unwrap_or_else(|| {
+                tracing::warn!(
+                    "workflow manager: no subagent coordinator; agent() spawns will fail"
+                );
+                tokio::sync::mpsc::unbounded_channel().0
+            }),
+            Arc::new(|name: &str, fields: &serde_json::Value, replayed: bool| {
+                if !replayed {
+                    tracing::info!(event = name, %fields, "workflow telemetry");
+                }
+            }),
+            cmd_tx.clone(),
+            std::collections::HashMap::new(),
+        ),
+    ));
+    let (workflow_launch_tx, mut workflow_launch_rx) = tokio::sync::mpsc::unbounded_channel::<
+        weepcode_tools::implementations::weepcode_build::workflow::WorkflowLaunchEnvelope,
+    >();
+    {
+        let manager = workflow_manager.clone();
+        let launch_cwd = std::path::PathBuf::from(session_info.cwd.as_str());
+        let launch_session_dir = workflow_session_dir;
+        tokio::spawn(async move {
+            use crate::session::workflow::registry;
+            use weepcode_tools::implementations::weepcode_build::workflow::WorkflowLaunchAck;
+            while let Some((req, ack)) = workflow_launch_rx.recv().await {
+                if !background_workflows_enabled {
+                    let _ = ack.send(WorkflowLaunchAck::Rejected {
+                        code: "workflows_disabled",
+                        detail: "Background workflows are disabled for this session.".into(),
+                    });
+                    continue;
+                }
+                let input = req.input;
+                if let Err(detail) = input.validate() {
+                    let _ = ack.send(WorkflowLaunchAck::Rejected {
+                        code: "workflow_invalid_input",
+                        detail,
+                    });
+                    continue;
+                }
+                if input.resume_from_run_id.is_some()
+                    && (input.name.is_some()
+                        || input.script.is_some()
+                        || input.script_path.is_some())
+                {
+                    let _ = ack.send(WorkflowLaunchAck::Rejected {
+                        code: "workflow_invalid_source",
+                        detail: "resume uses the original immutable script and args; launch edited source as a new run"
+                            .into(),
+                    });
+                    continue;
+                }
+                let registry_snapshot = registry::WorkflowRegistry::scan(Some(&launch_cwd));
+                let resolved = if let Some(name) = input.name.as_deref() {
+                    registry_snapshot.resolve_by_name(name)
+                } else if let Some(script) = input.script.clone() {
+                    registry::resolve_inline(script)
+                } else if let Some(path) = input.script_path.as_deref() {
+                    registry::resolve_by_path(
+                        std::path::Path::new(path),
+                        &launch_cwd,
+                        Some(&launch_session_dir),
+                    )
+                } else if input.resume_from_run_id.is_some() {
+                    match manager
+                        .lock()
+                        .await
+                        .script_copy_for(input.resume_from_run_id.as_deref().unwrap())
+                    {
+                        Some(script) => registry::resolve_inline(script),
+                        None => {
+                            let _ = ack.send(WorkflowLaunchAck::Rejected {
+                                code: "workflow_resume_unknown_run",
+                                detail: "no persisted script for that run id".into(),
+                            });
+                            continue;
+                        }
+                    }
+                } else {
+                    let _ = ack.send(WorkflowLaunchAck::Rejected {
+                        code: "workflow_invalid_source",
+                        detail: "provide one of name / script / script_path".into(),
+                    });
+                    continue;
+                };
+                let resolved = match resolved {
+                    Ok(resolved) => resolved,
+                    Err(error) => {
+                        let _ = ack.send(WorkflowLaunchAck::Rejected {
+                            code: "workflow_resolve_failed",
+                            detail: error.to_string(),
+                        });
+                        continue;
+                    }
+                };
+                if input.validate_only {
+                    let script = resolved.script.clone();
+                    let probe_args = input.args.clone();
+                    let agent_budget = input
+                        .agent_budget
+                        .unwrap_or(weepcode_workflow::DEFAULT_AGENT_BUDGET);
+                    tokio::spawn(async move {
+                        let verdict = tokio::task::spawn_blocking(move || {
+                            weepcode_workflow::validate_script_with_agent_budget(
+                                &script,
+                                probe_args,
+                                agent_budget,
+                            )
+                        })
+                        .await;
+                        let msg = match verdict {
+                            Ok(Ok(report)) => WorkflowLaunchAck::Validated {
+                                name: report.name,
+                                phases: report.phases,
+                                summary: report.outcome_summary,
+                            },
+                            Ok(Err(error)) => WorkflowLaunchAck::Rejected {
+                                code: "workflow_validation_failed",
+                                detail: error.to_string(),
+                            },
+                            Err(error) => WorkflowLaunchAck::Rejected {
+                                code: "workflow_validation_failed",
+                                detail: format!("validator panicked: {error}"),
+                            },
+                        };
+                        let _ = ack.send(msg);
+                    });
+                    continue;
+                }
+                let definition_name = resolved.meta.name.clone();
+                let args = match (&input.args, &input.resume_from_run_id) {
+                    (Some(args), _) => args.clone(),
+                    (None, Some(run_id)) => manager.lock().await.args_copy_for(run_id),
+                    (None, None) => serde_json::Value::Null,
+                };
+                let objective = args
+                    .get("objective")
+                    .and_then(|value| value.as_str())
+                    .map(str::to_string)
+                    .unwrap_or_else(|| resolved.meta.description.clone());
+                let spec = crate::session::workflow::manager::LaunchSpec {
+                    objective,
+                    args,
+                    agent_budget: input.agent_budget,
+                    resume_run_id: input.resume_from_run_id.clone(),
+                };
+                let launch_outcome = {
+                    let mut manager = manager.lock().await;
+                    let result = manager.launch(resolved, spec);
+                    let script_path = result
+                        .as_ref()
+                        .ok()
+                        .and_then(|(run_id, _)| manager.script_copy_path(run_id))
+                        .map(|path| path.display().to_string());
+                    (result, script_path)
+                };
+                match launch_outcome {
+                    (Ok((run_id, outcome_rx)), script_path) => {
+                        let display_name = manager
+                            .lock()
+                            .await
+                            .tracker()
+                            .lock()
+                            .get(&run_id)
+                            .map(|run| run.name.clone())
+                            .unwrap_or(definition_name);
+                        let _ = ack.send(WorkflowLaunchAck::Started {
+                            task_id: run_id.clone(),
+                            run_id: run_id.clone(),
+                            name: display_name,
+                            script_path,
+                        });
+                        tokio::spawn(async move {
+                            if let Ok(outcome) = outcome_rx.await {
+                                tracing::info!(run_id, ?outcome, "background workflow finished");
+                            }
+                        });
+                    }
+                    (Err(error), _) => {
+                        let _ = ack.send(WorkflowLaunchAck::Rejected {
+                            code: "workflow_launch_failed",
+                            detail: error.to_string(),
+                        });
+                    }
+                }
+            }
+        });
+    }
     let obs_bridge = {
         let sid = weepcode_tool_protocol::SessionId::new(&*session_info.id.0)
             .unwrap_or_else(|_| weepcode_tool_protocol::SessionId::new("unknown").expect("valid"));
@@ -1173,6 +1394,7 @@ pub(crate) async fn spawn_session_actor(
         turn_prompt_mode: turn_prompt_mode.clone(),
         plan_mode: plan_mode.clone(),
         goal_enabled,
+        background_workflows_enabled,
         goal_harness_enabled: std::sync::atomic::AtomicBool::new(false),
         goal_harness_availability_reconciled: std::sync::atomic::AtomicBool::new(false),
         goal_tracker,
@@ -1181,6 +1403,8 @@ pub(crate) async fn spawn_session_actor(
         goal_blocked_streak: std::sync::atomic::AtomicU32::new(0),
         goal_update_rx: std::cell::RefCell::new(Some(goal_update_rx)),
         goal_update_tx,
+        workflow_manager: workflow_manager.clone(),
+        workflow_launch_tx: workflow_launch_tx.clone(),
         goal_classifier_enabled: effective_config
             .resolve_goal_classifier_enabled(goal_enabled)
             .value,
@@ -1328,6 +1552,16 @@ pub(crate) async fn spawn_session_actor(
         .update_resource(
             weepcode_tools::implementations::weepcode_build::update_goal::GoalUpdateHandle(
                 session.goal_update_tx.clone(),
+            ),
+        )
+        .await;
+    session
+        .agent
+        .borrow()
+        .tool_bridge()
+        .update_resource(
+            weepcode_tools::implementations::weepcode_build::workflow::WorkflowLaunchHandle(
+                session.workflow_launch_tx.clone(),
             ),
         )
         .await;
@@ -1642,6 +1876,7 @@ pub(crate) async fn spawn_session_on_thread(
     persisted_plan_mode: Option<crate::session::plan_mode::PlanModeSnapshot>,
     persisted_goal_mode: Option<crate::session::goal_tracker::GoalOrchestration>,
     persisted_announcement_state: Option<crate::session::announcement_state::AnnouncementState>,
+    persisted_workflow_runs: Vec<crate::session::workflow::store::RestoredWorkflowRun>,
     memory_config: Option<crate::config::MemoryConfig>,
     managed_mcp_handle: crate::session::managed_mcp::ManagedMcpStateHandle,
     managed_mcp_expires_at: Option<chrono::DateTime<chrono::Utc>>,
@@ -1660,6 +1895,7 @@ pub(crate) async fn spawn_session_on_thread(
     write_file_enabled: bool,
     goal_enabled: bool,
     subagents_enabled: bool,
+    subagents_max_depth: u32,
     ask_user_question_enabled: bool,
     client_hooks: crate::extensions::hooks::ClientHooks,
     prompt_display_cwd: Option<String>,
@@ -1799,6 +2035,7 @@ pub(crate) async fn spawn_session_on_thread(
                         persisted_plan_mode,
                         persisted_goal_mode,
                         persisted_announcement_state,
+                        persisted_workflow_runs,
                         memory_config,
                         managed_mcp_handle,
                         managed_mcp_expires_at,
@@ -1817,6 +2054,7 @@ pub(crate) async fn spawn_session_on_thread(
                         write_file_enabled,
                         goal_enabled,
                         subagents_enabled,
+                        subagents_max_depth,
                         ask_user_question_enabled,
                         client_hooks,
                         prompt_display_cwd,

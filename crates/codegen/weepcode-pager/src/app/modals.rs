@@ -66,6 +66,7 @@ impl AgentView {
             models,
             cwd,
             has_session_announcements: slash_controller.has_session_announcements(),
+            workflows_available: slash_controller.workflows_available(),
             screen_mode: slash_controller.screen_mode(),
         };
         let Some(model_items) = cmd.suggest_args(&ctx, "") else {

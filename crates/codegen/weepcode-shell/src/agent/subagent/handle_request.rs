@@ -94,7 +94,7 @@ pub(crate) async fn handle_subagent_request(
     }
     let run_in_background = request.run_in_background
         || definition.background.unwrap_or(false);
-    let cancel_token = CancellationToken::new();
+    let cancel_token = request.cancel_token.clone();
     coordinator
         .borrow_mut()
         .insert_pending(PendingSubagent {
@@ -104,6 +104,7 @@ pub(crate) async fn handle_subagent_request(
             persona: request.runtime_overrides.persona.clone(),
             parent_prompt_id: request.parent_prompt_id.clone(),
             parent_session_id: ctx.parent_session_id.clone(),
+            owner: request.owner.clone(),
             started_at: start,
             run_in_background,
             surface_completion: request.surface_completion,
@@ -402,16 +403,15 @@ pub(crate) async fn handle_subagent_request(
         );
     }
     {
-        use weepcode_tools::implementations::weepcode_build::task::MAX_SUBAGENT_DEPTH;
         use weepcode_tools::types::tool::ToolKind;
         let child_depth = ctx.parent_depth + 1;
-        if child_depth >= MAX_SUBAGENT_DEPTH {
+        if child_depth >= ctx.subagents_max_depth {
             let before = definition.tool_config.tools.len();
             definition.tool_config.tools.retain(|tc| tc.kind != Some(ToolKind::Task));
             if definition.tool_config.tools.len() < before {
                 tracing::info!(
                     subagent_id = % request.id, child_depth, max_depth =
-                    MAX_SUBAGENT_DEPTH, "Stripped task tool from child at max depth"
+                    ctx.subagents_max_depth, "Stripped task tool from child at max depth"
                 );
             }
             prune_orphaned_background_task_tools(&mut definition.tool_config);
@@ -649,6 +649,7 @@ pub(crate) async fn handle_subagent_request(
             role: effective_runtime.role_name.clone(),
             model: Some(effective_model_id.0.to_string()),
             resumed_from: request.resume_from.clone(),
+            workflow_run_id: request.owner.workflow_run_id().map(str::to_string),
         },
         ctx.parent_cmd_tx.as_ref(),
     );
@@ -846,9 +847,8 @@ pub(crate) async fn handle_subagent_request(
                     "\n\n<agent-memory>\nMemory directory: {}\n\n{truncated}\n</agent-memory>",
                     memory_dir.display()
                 );
-                definition.prompt_body = Some(
-                    definition.prompt_body.unwrap_or_default() + &injection,
-                );
+                definition.prompt_body =
+                    Some(definition.prompt_body.unwrap_or_default() + injection.as_str());
             }
         }
     }
@@ -1108,6 +1108,7 @@ pub(crate) async fn handle_subagent_request(
             None,
             None,
             None,
+            Vec::new(),
             if verbatim_mirror_fork {
                 None
             } else if let Some(scope) = agent_memory_scope {
@@ -1146,6 +1147,7 @@ pub(crate) async fn handle_subagent_request(
             ctx.write_file_enabled,
             ctx.goal_enabled,
             true,
+            ctx.subagents_max_depth,
             ctx.ask_user_question_enabled,
             ctx.client_hooks.clone(),
             None,
@@ -1226,6 +1228,7 @@ pub(crate) async fn handle_subagent_request(
             subagent_id: request.id.clone(),
             parent_session_id: ctx.parent_session_id.clone(),
             parent_prompt_id: request.parent_prompt_id.clone(),
+            owner: request.owner.clone(),
             child_session_id: child_session_id.clone(),
             subagent_type: request.subagent_type.clone(),
             persona: effective_runtime.persona.clone(),
@@ -1296,7 +1299,7 @@ pub(crate) async fn handle_subagent_request(
             screen_mode: None,
             verbatim: true,
             traceparent: weepcode_file_utils::trace_context::current_traceparent(),
-            json_schema: None,
+            json_schema: request.runtime_overrides.output_schema.clone(),
             send_now: false,
             respond_to: prompt_tx,
             persist_ack: None,
@@ -1309,7 +1312,7 @@ pub(crate) async fn handle_subagent_request(
     let wait_outcome = {
         let fut = await_subagent_turn_or_cancellation(prompt_rx, cancel_token.clone());
         tokio::pin!(fut);
-        if !request.run_in_background {
+        if !request.run_in_background && !request.await_to_completion {
             /// How the bounded foreground wait ended.
             enum ForegroundWait {
                 /// The child finished (or was cancelled) within the budget.
@@ -1461,6 +1464,7 @@ pub(crate) async fn handle_subagent_request(
                             .as_ref()
                             .map(|p| p.to_string_lossy().to_string()),
                         backgrounded: false,
+                        ..Default::default()
                     }
                 }
                 Ok(
@@ -1498,6 +1502,7 @@ pub(crate) async fn handle_subagent_request(
                             .as_ref()
                             .map(|p| p.to_string_lossy().to_string()),
                         backgrounded: false,
+                        ..Default::default()
                     }
                 }
                 Ok(Ok(_)) => {

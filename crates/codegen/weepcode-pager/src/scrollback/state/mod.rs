@@ -1172,20 +1172,27 @@ impl ScrollbackState {
     /// the single point where block timing begins — constructors default
     /// to `started_at = None`.
     pub fn set_last_running(&mut self, running: bool) {
-        if let Some((_, entry)) = self.entries.last_mut() {
-            let was_running = entry.is_running;
-            entry.is_running = running;
-            entry.invalidate_cache();
+        if let Some(id) = self.entries.last().map(|(_, entry)| entry.id) {
+            self.set_entry_running(id, running);
+        }
+    }
 
-            // Start timing when a tool block enters running state.
-            if running && !was_running {
-                if let RenderBlock::ToolCall(ref mut tc) = entry.block {
-                    tc.start_timing();
-                }
-                self.running.insert(entry.id);
-            } else if !running && was_running {
-                self.running.remove(&entry.id);
+    pub fn set_entry_running(&mut self, id: EntryId, running: bool) {
+        let Some(entry) = self.entries.get_mut(&id) else {
+            return;
+        };
+        let was_running = entry.is_running;
+        entry.is_running = running;
+        entry.invalidate_cache();
+
+        // Start timing when a tool block enters running state.
+        if running && !was_running {
+            if let RenderBlock::ToolCall(ref mut tc) = entry.block {
+                tc.start_timing();
             }
+            self.running.insert(entry.id);
+        } else if !running && was_running {
+            self.running.remove(&entry.id);
         }
     }
 

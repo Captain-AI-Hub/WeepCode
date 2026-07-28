@@ -237,6 +237,12 @@ async fn test_e2e_idle_resume_refreshes_model_metadata() {
                     )),
                 )),
                 goal_enabled: false,
+                background_workflows_enabled: false,
+                workflow_manager: crate::session::acp_session::workflow_manager_for_tests(
+                    "test-session",
+                    "/tmp/test-session",
+                ),
+                workflow_launch_tx: crate::session::acp_session::workflow_launch_tx_for_tests(),
                 goal_harness_enabled: std::sync::atomic::AtomicBool::new(false),
                 goal_harness_availability_reconciled: std::sync::atomic::AtomicBool::new(false),
                 goal_tracker: Arc::new(parking_lot::Mutex::new(

@@ -108,6 +108,16 @@ impl JsonlStorageAdapter {
     fn goal_mode_state_file(&self, info: &Info) -> PathBuf {
         self.session_dir(info).join("goal").join("state.json")
     }
+    fn workflows_dir(&self, info: &Info) -> PathBuf {
+        self.session_dir(info).join("workflows")
+    }
+    fn workflow_run_dir(&self, info: &Info, run_id: &str) -> io::Result<PathBuf> {
+        crate::session::workflow::store::validate_run_id(run_id)?;
+        Ok(self.workflows_dir(info).join(run_id))
+    }
+    fn workflow_run_state_file(&self, info: &Info, run_id: &str) -> io::Result<PathBuf> {
+        Ok(self.workflow_run_dir(info, run_id)?.join("state.json"))
+    }
     fn rewind_points_file(&self, info: &Info) -> PathBuf {
         self.session_dir(info).join("rewind_points.jsonl")
     }
@@ -524,6 +534,121 @@ impl JsonlStorageAdapter {
                 Ok(None)
             }
         }
+    }
+    fn load_workflow_runs_sync(
+        &self,
+        info: &Info,
+    ) -> io::Result<Vec<crate::session::workflow::store::RestoredWorkflowRun>> {
+        use crate::session::workflow::store::{
+            MAX_RESTORED_WORKFLOW_RUNS, MAX_WORKFLOW_ARGS_BYTES, MAX_WORKFLOW_MANIFEST_BYTES,
+            read_bounded_nofollow,
+        };
+
+        let workflows_dir = self.workflows_dir(info);
+        match std::fs::symlink_metadata(&workflows_dir) {
+            Ok(meta) if meta.file_type().is_symlink() || !meta.is_dir() => {
+                return Ok(Vec::new());
+            }
+            Ok(_) => {}
+            Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(Vec::new()),
+            Err(error) => return Err(error),
+        }
+
+        let mut entries: Vec<_> = std::fs::read_dir(&workflows_dir)?
+            .filter_map(Result::ok)
+            .take(MAX_RESTORED_WORKFLOW_RUNS.saturating_add(1))
+            .collect();
+        let entries_truncated = entries.len() > MAX_RESTORED_WORKFLOW_RUNS;
+        entries.truncate(MAX_RESTORED_WORKFLOW_RUNS);
+        entries.sort_by_key(|entry| entry.file_name());
+        if entries_truncated {
+            tracing::warn!(
+                path = %workflows_dir.display(),
+                limit = MAX_RESTORED_WORKFLOW_RUNS,
+                "workflow restore run-count cap reached; ignoring remaining entries"
+            );
+        }
+
+        let mut restored = Vec::new();
+        for entry in entries {
+            let run_dir = entry.path();
+            let Ok(run_meta) = std::fs::symlink_metadata(&run_dir) else {
+                continue;
+            };
+            if run_meta.file_type().is_symlink() || !run_meta.is_dir() {
+                continue;
+            }
+            if std::fs::symlink_metadata(run_dir.join("cleared"))
+                .is_ok_and(|meta| meta.is_file() && !meta.file_type().is_symlink())
+            {
+                continue;
+            }
+
+            let manifest_path = run_dir.join("state.json");
+            let manifest = match read_bounded_nofollow(&manifest_path, MAX_WORKFLOW_MANIFEST_BYTES)
+                .and_then(|bytes| {
+                    serde_json::from_slice::<crate::session::workflow::store::WorkflowRunManifest>(
+                        &bytes,
+                    )
+                    .map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error))
+                }) {
+                Ok(manifest) => manifest,
+                Err(error) if error.kind() == io::ErrorKind::NotFound => continue,
+                Err(error) => {
+                    tracing::warn!(path = %manifest_path.display(), %error, "skipping invalid workflow manifest");
+                    continue;
+                }
+            };
+            if !matches!(
+                manifest.version,
+                1..=crate::session::workflow::store::WORKFLOW_RUN_MANIFEST_VERSION
+            ) || crate::session::workflow::store::validate_run_id(&manifest.state.run_id)
+                .is_err()
+                || run_dir.file_name().and_then(|name| name.to_str())
+                    != Some(manifest.state.run_id.as_str())
+            {
+                tracing::warn!(path = %manifest_path.display(), "skipping unsupported or mismatched workflow manifest");
+                continue;
+            }
+
+            let script_path = crate::session::workflow::store::script_revision_path(
+                &run_dir,
+                manifest.script_revision,
+            );
+            let script = match read_bounded_nofollow(
+                &script_path,
+                crate::session::workflow::registry::MAX_WORKFLOW_SOURCE_BYTES,
+            )
+            .and_then(|bytes| {
+                String::from_utf8(bytes)
+                    .map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error))
+            }) {
+                Ok(script) => script,
+                Err(error) => {
+                    tracing::warn!(path = %script_path.display(), %error, "skipping workflow with missing immutable script");
+                    continue;
+                }
+            };
+            let args_path = run_dir.join("args.json");
+            let args = match read_bounded_nofollow(&args_path, MAX_WORKFLOW_ARGS_BYTES).and_then(
+                |bytes| {
+                    serde_json::from_slice(&bytes)
+                        .map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error))
+                },
+            ) {
+                Ok(args) => args,
+                Err(error) => {
+                    tracing::warn!(path = %args_path.display(), %error, "skipping workflow with missing immutable args");
+                    continue;
+                }
+            };
+            restored.push(crate::session::workflow::store::RestoredWorkflowRun {
+                manifest,
+                script,
+                args,
+            });
+        }
+        Ok(restored)
     }
     /// Read chat history from JSONL file, handling both legacy ChatRequestMessage format
     /// (version 0) and new ConversationItem format (version >= 1).
@@ -1236,6 +1361,73 @@ impl StorageAdapter for JsonlStorageAdapter {
         tokio::fs::write(&tmp, json).await?;
         tokio::fs::rename(&tmp, &target).await
     }
+    async fn write_workflow_run_state(
+        &self,
+        info: &Info,
+        manifest: &crate::session::workflow::store::WorkflowRunManifest,
+    ) -> io::Result<()> {
+        let json = serde_json::to_vec_pretty(manifest)
+            .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
+        let target = self.workflow_run_state_file(info, &manifest.state.run_id)?;
+        if let Some(parent) = target.parent() {
+            tokio::fs::create_dir_all(parent).await?;
+            if parent.join("cleared").is_file() {
+                return Ok(());
+            }
+        }
+        if target.is_file()
+            && let Ok(existing) = tokio::fs::read(&target).await
+            && let Ok(on_disk) = serde_json::from_slice::<
+                crate::session::workflow::store::WorkflowRunManifest,
+            >(&existing)
+            && on_disk.state.run_id == manifest.state.run_id
+            && on_disk.state.revision > manifest.state.revision
+        {
+            tracing::debug!(
+                run_id = %manifest.state.run_id,
+                on_disk_revision = on_disk.state.revision,
+                incoming_revision = manifest.state.revision,
+                "skipping stale workflow manifest write"
+            );
+            return Ok(());
+        }
+
+        let tmp = target.with_extension(format!(
+            "json.{}.{}.tmp",
+            std::process::id(),
+            uuid::Uuid::now_v7().simple()
+        ));
+        tokio::fs::write(&tmp, json).await?;
+        #[cfg(windows)]
+        match tokio::fs::remove_file(&target).await {
+            Ok(()) => {}
+            Err(error) if error.kind() == io::ErrorKind::NotFound => {}
+            Err(error) => {
+                let _ = tokio::fs::remove_file(&tmp).await;
+                return Err(error);
+            }
+        }
+        if let Err(error) = tokio::fs::rename(&tmp, &target).await {
+            let _ = tokio::fs::remove_file(&tmp).await;
+            return Err(error);
+        }
+        Ok(())
+    }
+    async fn delete_workflow_run_state(&self, info: &Info, run_id: &str) -> io::Result<()> {
+        let target = self.workflow_run_state_file(info, run_id)?;
+        if let Some(parent) = target.parent() {
+            tokio::fs::create_dir_all(parent).await?;
+            let cleared = parent.join("cleared");
+            if !cleared.exists() {
+                tokio::fs::write(cleared, []).await?;
+            }
+        }
+        match tokio::fs::remove_file(target).await {
+            Ok(()) => Ok(()),
+            Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(()),
+            Err(error) => Err(error),
+        }
+    }
     async fn load_session(&self, info: &Info) -> io::Result<PersistedData> {
         let summary = self.read_summary_sync(info)?;
         let chat_history =
@@ -1258,6 +1450,7 @@ impl StorageAdapter for JsonlStorageAdapter {
                 &self.goal_mode_state_file(info),
             )?;
         let rewind_points = self.read_jsonl::<RewindPoint>(self.rewind_points_file(info))?;
+        let workflow_runs = self.load_workflow_runs_sync(info)?;
         let result = PersistedData {
             summary,
             chat_history,
@@ -1268,6 +1461,7 @@ impl StorageAdapter for JsonlStorageAdapter {
             signals,
             announcement_state,
             goal_mode_state,
+            workflow_runs,
         };
         tracing::info!(
             session_id = % info.id, num_chat_messages = result.chat_history.len(),
@@ -1305,6 +1499,7 @@ impl StorageAdapter for JsonlStorageAdapter {
             .read_optional_json_sync::<crate::session::goal_tracker::GoalOrchestration>(
                 &self.goal_mode_state_file(info),
             )?;
+        let workflow_runs = self.load_workflow_runs_sync(info)?;
         let result = super::PersistedDataLight {
             summary,
             chat_history,
@@ -1313,6 +1508,7 @@ impl StorageAdapter for JsonlStorageAdapter {
             signals,
             announcement_state,
             goal_mode_state,
+            workflow_runs,
         };
         tracing::info!(
             session_id = % info.id, num_chat_messages = result.chat_history.len(),

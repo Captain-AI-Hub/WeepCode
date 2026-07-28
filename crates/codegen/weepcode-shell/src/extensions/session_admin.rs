@@ -713,6 +713,7 @@ async fn handle_commands_list(agent: &MvpAgent, args: &acp::ExtRequest) -> ExtRe
         plugin_reg.as_deref(),
         availability,
         compat,
+        req.cwd.is_some(),
     )
     .await;
     Ok(acp::ExtResponse::new(Arc::from(

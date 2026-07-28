@@ -54,6 +54,7 @@ weepcode-tool-types = { workspace = true }
 weepcode-tool-protocol = { workspace = true }
 weepcode-computer-hub-core = { workspace = true }
 weepcode-computer-hub-sdk = { workspace = true }
+weepcode-workflow = { workspace = true }
 
 futures = { workspace = true }
 similar = { workspace = true }

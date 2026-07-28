@@ -59,6 +59,7 @@ pub(crate) struct SubagentTracker {
     pub subagent_id: String,
     pub parent_session_id: String,
     pub parent_prompt_id: Option<String>,
+    pub owner: SubagentOwner,
     pub child_session_id: acp::SessionId,
     pub subagent_type: String,
     pub persona: Option<String>,
@@ -168,6 +169,7 @@ pub(crate) struct SubagentSpawnContext {
     pub yolo_mode: bool,
     pub subagent_event_tx: mpsc::UnboundedSender<SubagentEvent>,
     pub parent_depth: u32,
+    pub subagents_max_depth: u32,
     /// Inference idle timeout (secs), resolved from the parent's model config at spawn-context creation time.
     pub inference_idle_timeout_secs: u64,
     /// Tier inputs for resolving `auto_compact_threshold_percent` at
@@ -472,6 +474,7 @@ pub(crate) struct CompletedSubagent {
     pub subagent_id: String,
     pub parent_session_id: String,
     pub parent_prompt_id: Option<String>,
+    pub owner: SubagentOwner,
     pub child_session_id: String,
     pub description: String,
     pub subagent_type: String,
@@ -512,6 +515,7 @@ pub(crate) struct PendingSubagent {
     pub persona: Option<String>,
     pub parent_prompt_id: Option<String>,
     pub parent_session_id: String,
+    pub owner: SubagentOwner,
     pub started_at: std::time::Instant,
     pub run_in_background: bool,
     /// Mirrors `SubagentRequest::surface_completion`.
@@ -532,6 +536,7 @@ struct FailureCompletion<'a> {
     description: String,
     parent_prompt_id: Option<String>,
     parent_session_id: String,
+    owner: SubagentOwner,
     persona: Option<String>,
     started_at: std::time::Instant,
     error: &'a str,

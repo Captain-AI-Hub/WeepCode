@@ -50,6 +50,7 @@ members = [
     "crates/codegen/weepcode-tools",
     "crates/codegen/weepcode-tools-api",
     "crates/codegen/weepcode-version",
+    "crates/codegen/weepcode-workflow",
     "crates/codegen/weepcode-workspace",
     "crates/codegen/weepcode-workspace-client",
     "crates/codegen/weepcode-workspace-types",
@@ -202,6 +203,7 @@ regex = "1"
 reqwest = { version = "0.12", features = ["rustls-tls", "stream", "json", "multipart", "http2", "blocking", "socks"], default-features = false }
 reqwest-middleware = { version = "0.4.1", features = ["json", "multipart"] }
 resvg = { version = "0.47", default-features = false, features = ["text"] }
+rhai = { version = "1.25", features = ["serde"] }
 ring = "0.17"
 rsa = "0.9"
 runfiles = "0.1"
@@ -264,6 +266,7 @@ walkdir = "2"
 webbrowser = { version = "1.0.4" }
 which = "8"
 whoami = "1.4"
+wildmatch = "2"
 windows = { version = "0.61", features = ["Win32_Security", "Win32_Security_Authorization", "Win32_Foundation", "Win32_System_Threading", "Win32_System_JobObjects", "Win32_System_Console", "Win32_System_Pipes"] }
 wiremock = "0.6"
 wl-clipboard-rs = "0.9"
@@ -297,6 +300,7 @@ weepcode-test-support = { path = "crates/codegen/weepcode-test-support" }
 weepcode-tools = { path = "crates/codegen/weepcode-tools" }
 weepcode-tools-api = { path = "crates/codegen/weepcode-tools-api" }
 weepcode-version = { path = "crates/codegen/weepcode-version" }
+weepcode-workflow = { path = "crates/codegen/weepcode-workflow" }
 weepcode-workspace = { path = "crates/codegen/weepcode-workspace" }
 weepcode-workspace-types = { path = "crates/codegen/weepcode-workspace-types" }
 weepcode-hooks-plugins-types = { path = "crates/codegen/weepcode-hooks-plugins-types" }

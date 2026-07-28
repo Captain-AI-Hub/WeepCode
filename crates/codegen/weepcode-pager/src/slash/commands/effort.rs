@@ -321,6 +321,7 @@ mod tests {
             models: &empty,
             cwd: std::path::Path::new("."),
             has_session_announcements: false,
+            workflows_available: false,
             screen_mode: crate::app::ScreenMode::Fullscreen,
         };
         assert!(cmd.suggest_args(&ctx, "").is_none());
@@ -333,6 +334,7 @@ mod tests {
             models: &plain,
             cwd: std::path::Path::new("."),
             has_session_announcements: false,
+            workflows_available: false,
             screen_mode: crate::app::ScreenMode::Fullscreen,
         };
         assert!(cmd.suggest_args(&ctx, "").is_none());
@@ -351,6 +353,7 @@ mod tests {
             models: &state,
             cwd: std::path::Path::new("."),
             has_session_announcements: false,
+            workflows_available: false,
             screen_mode: crate::app::ScreenMode::Fullscreen,
         };
         let items = cmd.suggest_args(&ctx, "").unwrap();

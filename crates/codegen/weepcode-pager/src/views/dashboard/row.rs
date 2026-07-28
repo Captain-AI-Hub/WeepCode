@@ -1084,6 +1084,7 @@ mod tests {
             context_source: None,
             resumed_from: None,
             capability_mode: None,
+            workflow_run_id: None,
             context_normalized: false,
             child_updates_replayed: false,
             parent_prompt_id: None,

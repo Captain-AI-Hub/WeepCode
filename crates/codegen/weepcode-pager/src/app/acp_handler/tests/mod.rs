@@ -81,6 +81,7 @@ pub(super) fn make_subagent_info(child_sid: &str) -> SubagentInfo {
         context_source: None,
         resumed_from: None,
         capability_mode: None,
+        workflow_run_id: None,
         context_normalized: false,
         parent_prompt_id: None,
         started_at: Instant::now(),
@@ -523,30 +524,6 @@ pub(super) fn critical_announcement(
         severity: Some("critical".into()),
         ..Default::default()
     }
-}
-pub(super) fn announcements_update_notif(
-    r#gen: u64,
-    announcements: &[weepcode_announcements::RemoteAnnouncement],
-) -> acp::ExtNotification {
-    acp::ExtNotification::new(
-        "weepcode/announcements/update",
-        std::sync::Arc::from(
-            serde_json::value::to_raw_value(
-                    &serde_json::json!(
-                        { "gen" : r#gen, "announcements" : announcements }
-                    ),
-                )
-                .unwrap(),
-        ),
-    )
-}
-/// Id of the item the banner slot currently selects (None = banner closed).
-pub(super) fn shown_banner_id(app: &AppView) -> Option<String> {
-    crate::views::announcements::first_session_announcement(
-            &app.active_announcements,
-            &app.hidden_announcement_ids,
-        )
-        .and_then(|a| a.id.clone())
 }
 pub(super) fn make_created_ext_notif(
     session_id: &str,
@@ -1174,6 +1151,7 @@ pub(super) fn test_subagent_spawned(
         role: None,
         model: None,
         resumed_from: None,
+        workflow_run_id: None,
     }
 }
 pub(super) fn test_subagent_finished(child_sid: &str) -> WeepcodeSessionUpdate {
@@ -1960,7 +1938,6 @@ mod permissions;
 mod session_events;
 mod follow_ups;
 mod settings;
-mod announcements;
 mod scheduled_tasks;
 mod queue_and_adoption;
 mod plan_mode;

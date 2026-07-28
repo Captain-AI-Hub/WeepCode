@@ -23,6 +23,9 @@ use super::types::{
 use crate::register_resource;
 use weepcode_tool_runtime::ToolError;
 
+#[cfg(test)]
+use super::types::SubagentOwner;
+
 /// Abstraction over the mechanism used to spawn, query, and cancel subagents.
 ///
 /// Injected into `Resources` as [`SubagentBackendResource`] so that
@@ -171,6 +174,7 @@ impl SubagentBackend for ChannelBackend {
     async fn cancel(&self, id: &str) -> SubagentCancelOutcome {
         let (respond_to, response_rx) = oneshot::channel();
         let sent = self.tx.send(SubagentEvent::Cancel(SubagentCancelRequest {
+            parent_session_id: None,
             target: SubagentCancelTarget::SubagentId(id.to_string()),
             respond_to,
         }));
@@ -350,6 +354,9 @@ mod tests {
             run_in_background: false,
             surface_completion: true,
             fork_context: false,
+            owner: SubagentOwner::Task,
+            await_to_completion: false,
+            cancel_token: tokio_util::sync::CancellationToken::new(),
             result_tx: dummy_tx,
         };
 
@@ -382,6 +389,9 @@ mod tests {
             run_in_background: false,
             surface_completion: true,
             fork_context: false,
+            owner: SubagentOwner::Task,
+            await_to_completion: false,
+            cancel_token: tokio_util::sync::CancellationToken::new(),
             result_tx: dummy_tx,
         };
 
@@ -535,6 +545,9 @@ mod tests {
             run_in_background: false,
             surface_completion: true,
             fork_context: false,
+            owner: SubagentOwner::Task,
+            await_to_completion: false,
+            cancel_token: tokio_util::sync::CancellationToken::new(),
             result_tx: dummy_tx,
         };
 

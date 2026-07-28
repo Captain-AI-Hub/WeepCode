@@ -257,6 +257,7 @@ pub struct PersistedData {
     pub announcement_state: Option<crate::session::announcement_state::AnnouncementState>,
     /// Persisted goal mode orchestration state (None for sessions without goal mode)
     pub goal_mode_state: Option<crate::session::goal_tracker::GoalOrchestration>,
+    pub workflow_runs: Vec<crate::session::workflow::store::RestoredWorkflowRun>,
 }
 
 /// Persisted data WITHOUT updates - for memory-efficient session loading
@@ -274,6 +275,7 @@ pub struct PersistedDataLight {
     pub announcement_state: Option<crate::session::announcement_state::AnnouncementState>,
     /// Persisted goal mode orchestration state (None for sessions without goal mode)
     pub goal_mode_state: Option<crate::session::goal_tracker::GoalOrchestration>,
+    pub workflow_runs: Vec<crate::session::workflow::store::RestoredWorkflowRun>,
 }
 
 /// Result of copying session data
@@ -398,11 +400,25 @@ fn acp_user_chunk_prompt_index(update: &SessionUpdate) -> Option<usize> {
         .map(|v| v as usize)
 }
 
+pub(crate) const HOST_TURN_META_KEY: &str = "hostTurn";
+
+pub(crate) fn is_host_turn_chunk(chunk: &acp::ContentChunk) -> bool {
+    chunk
+        .meta
+        .as_ref()
+        .and_then(|meta| meta.get(HOST_TURN_META_KEY))
+        .and_then(|value| value.as_bool())
+        == Some(true)
+}
+
 fn is_acp_user_message_chunk(update: &SessionUpdate) -> bool {
-    matches!(
-        update,
-        SessionUpdate::Acp(n) if matches!(n.update, acp::SessionUpdate::UserMessageChunk(_))
-    )
+    let SessionUpdate::Acp(notification) = update else {
+        return false;
+    };
+    let acp::SessionUpdate::UserMessageChunk(chunk) = &notification.update else {
+        return false;
+    };
+    !is_host_turn_chunk(chunk)
 }
 
 /// Tracks user-message runs for turn counting (updates truncate / filter_rewind).
@@ -624,6 +640,14 @@ pub trait StorageAdapter: Send + Sync {
         info: &Info,
         state: &crate::session::goal_tracker::GoalOrchestration,
     ) -> io::Result<()>;
+
+    async fn write_workflow_run_state(
+        &self,
+        info: &Info,
+        manifest: &crate::session::workflow::store::WorkflowRunManifest,
+    ) -> io::Result<()>;
+
+    async fn delete_workflow_run_state(&self, info: &Info, run_id: &str) -> io::Result<()>;
 
     /// Load all persisted data for a session
     async fn load_session(&self, info: &Info) -> io::Result<PersistedData>;

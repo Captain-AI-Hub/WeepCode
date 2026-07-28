@@ -9,6 +9,7 @@ pub mod notifications;
 pub mod pending_interaction;
 pub mod prompt_queue;
 pub mod two_pass;
+pub(crate) mod workflow;
 pub use self::acp_session::*;
 pub use self::acp_types::*;
 pub use self::commands::*;
@@ -83,6 +84,12 @@ pub enum PromptOrigin {
     GoalClassifierNudge,
     /// Scheduled task (`/loop`) prompt fired by the scheduler via the pager.
     SchedulerFired,
+    /// Synthetic prompt injected when a workflow reports final output back to the
+    /// parent session.
+    WorkflowCompleted {
+        /// Workflow completion id used for stale completion suppression.
+        completion_id: String,
+    },
     /// Turn injected after a resumed plan-approval decision: the
     /// shell re-parked `exit_plan_mode` on resume, the user approved/revised,
     /// and the shell injects the follow-up turn. Synthetic so the user never
@@ -108,6 +115,10 @@ impl PromptOrigin {
             Self::GoalClassifierNudge
         } else if prompt_id.starts_with("scheduler-fired-") {
             Self::SchedulerFired
+        } else if let Some(completion_id) = prompt_id.strip_prefix("workflow-completed-") {
+            Self::WorkflowCompleted {
+                completion_id: completion_id.to_string(),
+            }
         } else if prompt_id.starts_with("plan-resume-") {
             Self::PlanResume
         } else {
@@ -131,7 +142,8 @@ impl PromptOrigin {
             | Self::SubagentCompleted { .. }
             | Self::NotificationDrain
             | Self::GoalSummary
-            | Self::GoalClassifierNudge => true,
+            | Self::GoalClassifierNudge
+            | Self::WorkflowCompleted { .. } => true,
         }
     }
     /// If this is an auto-wake prompt, returns the inner completion ID
@@ -140,6 +152,7 @@ impl PromptOrigin {
         match self {
             Self::TaskCompleted { task_id } => Some(task_id),
             Self::SubagentCompleted { subagent_id } => Some(subagent_id),
+            Self::WorkflowCompleted { completion_id } => Some(completion_id),
             Self::User
             | Self::NotificationDrain
             | Self::GoalSummary

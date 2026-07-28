@@ -120,6 +120,8 @@ pub(crate) fn ctx_with_toggle(toggle: HashMap<String, bool>) -> SubagentSpawnCon
         hook_registry: None,
         hook_workspace_root: String::new(),
         parent_depth: 0,
+        subagents_max_depth:
+            weepcode_tools::implementations::weepcode_build::task::MAX_SUBAGENT_DEPTH,
         inference_idle_timeout_secs: 600,
         auto_compact_threshold_tiers: crate::agent::subagent::AutoCompactThresholdTiers::default(),
         permission_handle: None,
@@ -171,7 +173,10 @@ pub(crate) fn make_request(
         runtime_overrides: Default::default(),
         run_in_background: false,
         surface_completion: true,
+        await_to_completion: false,
         fork_context: false,
+        owner: weepcode_tools::implementations::weepcode_build::task::types::SubagentOwner::Task,
+        cancel_token: tokio_util::sync::CancellationToken::new(),
         result_tx: tx,
     };
     (req, rx)

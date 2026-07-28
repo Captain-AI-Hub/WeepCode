@@ -338,7 +338,7 @@ impl SubagentCoordinator {
     ) -> Vec<ActiveSubagentSummary> {
         self.active
             .values()
-            .filter(|t| t.parent_session_id == parent_session_id)
+            .filter(|t| t.parent_session_id == parent_session_id && !t.owner.is_workflow())
             .map(tracker_to_summary)
             .collect()
     }

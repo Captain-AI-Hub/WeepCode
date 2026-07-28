@@ -136,12 +136,12 @@ async fn goal_enabled_without_update_goal_disables_harness_continuation_and_todo
             let mut actor = fresh_actor().await;
             actor.goal_enabled = true;
             let with_tool = vec![UPDATE_GOAL_TOOL_NAME.to_string()];
-            let avail = actor.build_command_availability(&with_tool);
+            let avail = actor.build_command_availability(&with_tool, false);
             assert!(avail.goal);
             assert!(actor.goal_harness_enabled());
             seed_active_goal(&actor);
             let without_tool = vec!["todo_write".to_string()];
-            let avail = actor.build_command_availability(&without_tool);
+            let avail = actor.build_command_availability(&without_tool, false);
             assert!(!avail.goal);
             assert!(
                 !actor.goal_harness_enabled(),

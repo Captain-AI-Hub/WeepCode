@@ -331,7 +331,7 @@ impl ChannelSpawner {
         harness_agent_type: Option<String>,
     ) -> Result<String, SpawnError> {
         use weepcode_tools::implementations::weepcode_build::task::types::{
-            SubagentEvent, SubagentRequest, SubagentRuntimeOverrides,
+            SubagentEvent, SubagentOwner, SubagentRequest, SubagentRuntimeOverrides,
         };
         let (result_tx, result_rx) = tokio::sync::oneshot::channel();
         let request = SubagentRequest {
@@ -351,7 +351,10 @@ impl ChannelSpawner {
             run_in_background: false,
             // Harness-internal: never surface to the model's idle reminder.
             surface_completion: false,
+            await_to_completion: false,
             fork_context: true,
+            owner: SubagentOwner::Task,
+            cancel_token: tokio_util::sync::CancellationToken::new(),
             result_tx,
         };
         if self

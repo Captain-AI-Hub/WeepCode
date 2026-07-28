@@ -1028,6 +1028,7 @@ impl acp::Agent for MvpAgent {
                         persisted_plan_mode: None,
                         persisted_goal_mode: None,
                         persisted_announcement_state: None,
+                        persisted_workflow_runs: Vec::new(),
                         session_meta: arguments.meta.as_ref(),
                         managed_mcp_expires_at,
                         model_agent_type: model_agent_type.as_deref(),
@@ -1313,6 +1314,7 @@ impl acp::Agent for MvpAgent {
             signals: persisted_signals,
             announcement_state: persisted_announcement_state,
             goal_mode_state: _persisted_goal_mode,
+            workflow_runs: persisted_workflow_runs,
         } = persistence_info;
         let restored_compaction_count = persisted_signals
             .as_ref()
@@ -1565,6 +1567,7 @@ impl acp::Agent for MvpAgent {
                         persisted_plan_mode,
                         persisted_goal_mode: _persisted_goal_mode,
                         persisted_announcement_state,
+                        persisted_workflow_runs,
                         session_meta: request_meta.as_ref(),
                         managed_mcp_expires_at,
                         model_agent_type: persisted_agent_name.as_deref(),

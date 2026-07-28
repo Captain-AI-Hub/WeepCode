@@ -93,6 +93,12 @@ impl AgentView {
             chat_kind: false,
             app_chat_mode: false,
             goal_state: None,
+            workflow_blocks: std::collections::HashMap::new(),
+            workflow_runs: Vec::new(),
+            workflow_run_revisions: std::collections::HashMap::new(),
+            cleared_workflow_runs: std::collections::HashSet::new(),
+            show_workflows: false,
+            workflows_view: crate::views::workflows::WorkflowsViewState::default(),
             parked_wait_marker_for: None,
             end_work_announced: false,
             pending_stop_hooks: None,
@@ -361,6 +367,10 @@ impl AgentView {
                 crate::acp::tracker::AcpUpdateTracker::new(),
             ),
             todo: std::mem::take(&mut self.todo),
+            workflow_blocks: std::mem::take(&mut self.workflow_blocks),
+            workflow_runs: std::mem::take(&mut self.workflow_runs),
+            workflow_run_revisions: std::mem::take(&mut self.workflow_run_revisions),
+            cleared_workflow_runs: std::mem::take(&mut self.cleared_workflow_runs),
             last_seen_event_id: self.last_seen_event_id.clone(),
             last_applied_event_seq: self.last_applied_event_seq,
             last_applied_weepcode_event_seq: self.last_applied_weepcode_event_seq,
@@ -510,6 +520,34 @@ impl AgentView {
         } else if success {
             let tail = std::mem::replace(&mut self.scrollback, reload.scrollback);
             self.scrollback.append_entries_from(tail);
+            self.workflow_blocks.extend(reload.workflow_blocks);
+            {
+                let mut live_by_id: HashMap<String, _> = std::mem::take(&mut self.workflow_runs)
+                    .into_iter()
+                    .map(|run| (run.run_id.clone(), run))
+                    .collect();
+                let mut merged = Vec::with_capacity(reload.workflow_runs.len() + live_by_id.len());
+                for run in reload.workflow_runs {
+                    if let Some(live) = live_by_id.remove(&run.run_id) {
+                        merged.push(live);
+                    } else {
+                        merged.push(run);
+                    }
+                }
+                let mut live_only: Vec<_> = live_by_id.into_values().collect();
+                live_only.sort_by_key(|run| run.received_at);
+                merged.extend(live_only);
+                self.cleared_workflow_runs
+                    .extend(reload.cleared_workflow_runs);
+                merged.retain(|run| !self.cleared_workflow_runs.contains(&run.run_id));
+                self.workflow_runs = merged;
+            }
+            for (run_id, rev) in reload.workflow_run_revisions {
+                self.workflow_run_revisions
+                    .entry(run_id)
+                    .and_modify(|live| *live = (*live).max(rev))
+                    .or_insert(rev);
+            }
             if !reload.saw_todo_update {
                 self.todo = reload.todo;
             }
@@ -523,6 +561,10 @@ impl AgentView {
                 .raise_invalidation_floor(staging_generations);
             self.session.tracker = reload.tracker;
             self.todo = reload.todo;
+            self.workflow_blocks = reload.workflow_blocks;
+            self.workflow_runs = reload.workflow_runs;
+            self.workflow_run_revisions = reload.workflow_run_revisions;
+            self.cleared_workflow_runs = reload.cleared_workflow_runs;
             self.last_seen_event_id = reload.last_seen_event_id;
             self.last_applied_event_seq = reload.last_applied_event_seq;
             self.last_applied_weepcode_event_seq = reload.last_applied_weepcode_event_seq;
@@ -1155,6 +1197,7 @@ mod resolve_turn_activity_tests {
                 context_source: None,
                 resumed_from: None,
                 capability_mode: None,
+                workflow_run_id: None,
                 context_normalized: false,
                 parent_prompt_id: None,
                 started_at: now,

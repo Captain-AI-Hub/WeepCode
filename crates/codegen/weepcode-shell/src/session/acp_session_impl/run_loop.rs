@@ -726,7 +726,26 @@ pub(super) async fn run_session(
             super::PromptOrigin::GoalSummary, respond_to, persist_ack : None,
             parsed_prompt_tx : None, queue_meta : None, send_now : false, }); }
             SessionActor::maybe_start_running_task(session.clone(), completion_tx
-            .clone()). await; } SessionCommand::TakeTurnMessages { respond_to } => { let
+            .clone()). await; } SessionCommand::WorkflowCompletionTurn { run_id, revision } => {
+            let state_suppressed = session.state.lock(). await.notifications_suppressed;
+            let wake_suppressed = state_suppressed || session.goal_loop_active() || ! session
+            .tool_context.auto_wake_enabled;
+            let should_wake = if wake_suppressed { false } else { let tracker = session
+            .workflow_tracker(). await; tracker.lock().is_unreported_completion(& run_id,
+            revision) }; if ! should_wake { continue; } let prompt_id =
+            format!("workflow-completed-{run_id}-{revision}"); let prompt_text =
+            "A background workflow stopped. Review the workflow completion reminder, report the result to the user, and take any appropriate next action.";
+            let prompt_blocks =
+            vec![acp::ContentBlock::Text(acp::TextContent::new(prompt_text))]; let
+            (respond_to, _) = tokio::sync::oneshot::channel(); { let mut state = session
+            .state.lock(). await; state.pending_inputs.push_back(InputItem { prompt_id,
+            prompt_blocks, prompt_mode : crate ::session::plan_mode::PromptMode::Agent,
+            trace_gcs_config : None, artifact_tracker : None, client_identifier : None,
+            screen_mode : None, verbatim : true, json_schema : None, origin :
+            super::PromptOrigin::WorkflowCompleted { completion_id : run_id.clone() },
+            respond_to, persist_ack : None, parsed_prompt_tx : None, queue_meta : None,
+            send_now : false, }); } SessionActor::maybe_start_running_task(session.clone(),
+            completion_tx.clone()). await; } SessionCommand::TakeTurnMessages { respond_to } => { let
             result = session.chat_state_handle.take_turn_messages(). await; let _ =
             respond_to.send(result); } SessionCommand::TakeHarnessTraceTurns { respond_to
             } => { let result = session.chat_state_handle.take_harness_trace_turns().

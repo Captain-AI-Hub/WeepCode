@@ -147,6 +147,10 @@ impl MvpAgent {
                                         coord.cancel_by_parent_prompt_id(parent_prompt_id);
                                         SubagentCancelOutcome::Cancelled
                                     }
+                                    SubagentCancelTarget::WorkflowRunId(ref workflow_run_id) => {
+                                        coord.cancel_by_workflow_run_id(workflow_run_id);
+                                        SubagentCancelOutcome::Cancelled
+                                    }
                                 }
                             };
                             let _ = request.respond_to.send(outcome);
@@ -454,6 +458,7 @@ impl MvpAgent {
             yolo_mode,
             subagent_event_tx: self.subagent_event_tx.clone(),
             parent_depth,
+            subagents_max_depth: self.cfg.borrow().subagents_max_depth,
             inference_idle_timeout_secs,
             auto_compact_threshold_tiers:
                 crate::agent::subagent::AutoCompactThresholdTiers::capture(&self.cfg.borrow()),

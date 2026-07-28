@@ -141,6 +141,12 @@ pub enum PersistenceMsg {
     AnnouncementState(crate::session::announcement_state::AnnouncementState),
     /// Persist goal mode orchestration state.
     GoalModeState(crate::session::goal_tracker::GoalOrchestration),
+    WorkflowRunState(crate::session::workflow::store::WorkflowRunManifest),
+    WorkflowRunStateAndAck {
+        manifest: crate::session::workflow::store::WorkflowRunManifest,
+        respond_to: tokio::sync::oneshot::Sender<io::Result<()>>,
+    },
+    DeleteWorkflowRunState(String),
     /// Persist a /btw side question entry
     Btw(BtwEntry),
     /// Persist updated HEAD commit and branch to summary.
@@ -1482,6 +1488,37 @@ impl SessionPersistence {
                         tracing::warn!(?e, "failed to write goal mode state");
                     }
                 }
+                PersistenceMsg::WorkflowRunState(manifest) => {
+                    if let Err(error) = self
+                        .storage
+                        .write_workflow_run_state(&self.info, &manifest)
+                        .await
+                    {
+                        tracing::warn!(run_id = %manifest.state.run_id, ?error, "failed to write workflow run state");
+                    }
+                }
+                PersistenceMsg::WorkflowRunStateAndAck {
+                    manifest,
+                    respond_to,
+                } => {
+                    let result = self
+                        .storage
+                        .write_workflow_run_state(&self.info, &manifest)
+                        .await;
+                    if let Err(error) = &result {
+                        tracing::warn!(run_id = %manifest.state.run_id, ?error, "failed to write acknowledged workflow run state");
+                    }
+                    let _ = respond_to.send(result);
+                }
+                PersistenceMsg::DeleteWorkflowRunState(run_id) => {
+                    if let Err(error) = self
+                        .storage
+                        .delete_workflow_run_state(&self.info, &run_id)
+                        .await
+                    {
+                        tracing::warn!(%run_id, ?error, "failed to delete workflow run state");
+                    }
+                }
                 PersistenceMsg::ContentChunk(content_chunks) => {
                     let content_part = content_chunks
                         .content_chunks
@@ -2035,6 +2072,7 @@ pub struct PersistedInfo {
     pub rewind_points: Vec<RewindPoint>,
     /// Persisted session signals (None for old sessions without signals file)
     pub signals: Option<SessionSignals>,
+    pub workflow_runs: Vec<crate::session::workflow::store::RestoredWorkflowRun>,
 }
 
 /// Same as PersistedInfo but without updates - for memory efficiency when streaming
@@ -2055,6 +2093,7 @@ pub struct PersistedInfoLight {
     pub announcement_state: Option<crate::session::announcement_state::AnnouncementState>,
     /// Persisted goal mode orchestration state (None for sessions without goal mode)
     pub goal_mode_state: Option<crate::session::goal_tracker::GoalOrchestration>,
+    pub workflow_runs: Vec<crate::session::workflow::store::RestoredWorkflowRun>,
 }
 
 /// On NotFound, try pulling from backend. Returns pulled info or the original error.
@@ -2105,6 +2144,7 @@ pub(crate) async fn load(
         plan_state: persisted.plan_state,
         rewind_points: persisted.rewind_points,
         signals: persisted.signals,
+        workflow_runs: persisted.workflow_runs,
     };
 
     let (tx, rx) = mpsc::unbounded_channel::<PersistenceMsg>();
@@ -2190,6 +2230,7 @@ pub(crate) async fn load_light(
         signals: persisted.signals,
         announcement_state: persisted.announcement_state,
         goal_mode_state: persisted.goal_mode_state,
+        workflow_runs: persisted.workflow_runs,
     };
 
     let (tx, rx) = mpsc::unbounded_channel::<PersistenceMsg>();

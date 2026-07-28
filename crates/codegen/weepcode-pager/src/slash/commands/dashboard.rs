@@ -109,6 +109,7 @@ mod tests {
             models: &models,
             cwd: std::path::Path::new("."),
             has_session_announcements: false,
+            workflows_available: false,
             screen_mode,
         };
         assert!(cmd.visible(&ctx(crate::app::ScreenMode::Fullscreen)));

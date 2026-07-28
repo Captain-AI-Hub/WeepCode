@@ -207,10 +207,12 @@ impl SessionActor {
             .into_iter()
             .map(|td| td.function.name)
             .collect();
-        let availability = self.build_command_availability(&tool_names);
+        let has_workflow_runs = !self.workflow_tracker().await.lock().list().is_empty();
+        let availability = self.build_command_availability(&tool_names, has_workflow_runs);
         self.maybe_reconcile_active_goal_without_harness().await;
         self.maybe_reconcile_active_goal_without_plan().await;
-        let commands = slash_commands::available_commands(&skills, availability);
+        let (_, named_workflows) = self.named_workflow_snapshot();
+        let commands = slash_commands::available_commands(&skills, availability, &named_workflows);
         if commands.is_empty() {
             return;
         }

@@ -3198,6 +3198,7 @@ fn spawn_notif(subagent_id: &str, resumed_from: Option<&str>) -> XaiSessionNotif
             role: None,
             model: None,
             resumed_from: resumed_from.map(str::to_string),
+            workflow_run_id: None,
         },
         meta: None,
     }

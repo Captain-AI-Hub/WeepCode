@@ -4,8 +4,11 @@
 //! canonical copy shared with `pty_e2e`); only suite-local constants stay
 //! here.
 
+#[allow(unused_imports)]
 pub(crate) use serde_json::json;
+#[allow(unused_imports)]
 pub(crate) use std::time::{Duration, Instant};
+#[allow(unused_imports)]
 pub(crate) use weepcode_pager_pty_harness::{
     ContentController, LeaderCluster, MockModel, PtyHarness, inference_request_count, keys,
     oauth_env_for_pager, pager_binary, seed_fake_oauth, submit_turn, wait_for_labels_absent,

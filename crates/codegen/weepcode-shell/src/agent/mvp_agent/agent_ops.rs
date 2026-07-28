@@ -2679,6 +2679,7 @@ impl MvpAgent {
             persisted_plan_mode,
             persisted_goal_mode,
             persisted_announcement_state,
+            persisted_workflow_runs,
             session_meta,
             managed_mcp_expires_at,
             model_agent_type,
@@ -3115,6 +3116,7 @@ impl MvpAgent {
         let write_file_enabled = self.cfg.borrow().resolve_write_file().value;
         let goal_enabled = self.cfg.borrow().resolve_goal().value;
         let subagents_enabled = self.cfg.borrow().subagents_enabled;
+        let subagents_max_depth = self.cfg.borrow().subagents_max_depth;
         let ask_user_question_enabled = crate::upload::turn::parse_ask_user_question_from_meta(
                 session_meta,
             )
@@ -3322,6 +3324,7 @@ impl MvpAgent {
                     persisted_plan_mode,
                     persisted_goal_mode,
                     persisted_announcement_state,
+                    persisted_workflow_runs,
                     self.memory_config.clone(),
                     self.managed_mcp_cache.clone(),
                     managed_mcp_expires_at,
@@ -3340,6 +3343,7 @@ impl MvpAgent {
                     write_file_enabled,
                     goal_enabled,
                     subagents_enabled,
+                    subagents_max_depth,
                     ask_user_question_enabled,
                     client_hooks,
                     prompt_display_cwd,

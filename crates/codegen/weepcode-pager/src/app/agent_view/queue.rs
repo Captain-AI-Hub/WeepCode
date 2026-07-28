@@ -448,7 +448,7 @@ impl AgentView {
         work.running_subagents = self
             .subagent_sessions
             .values()
-            .filter(|s| s.is_running())
+            .filter(|s| s.is_running() && s.workflow_run_id.is_none())
             .count();
         work
     }

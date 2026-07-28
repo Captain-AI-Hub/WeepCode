@@ -1417,6 +1417,9 @@ pub struct Config {
     /// Not remotely gated.
     #[serde(skip)]
     pub subagents_enabled: bool,
+    /// Resolved max subagent nesting depth.
+    #[serde(skip)]
+    pub subagents_max_depth: u32,
     /// Per-subagent model ID overrides from `[subagents.models]` in config.toml.
     /// Keys are agent names, values are model IDs. Set alongside `subagents_enabled`
     /// from `SubagentsConfig::resolve()`.
@@ -1730,6 +1733,7 @@ impl Default for Config {
             cli_agents: Vec::new(),
             cli_agent_overrides: CliAgentOverrides::default(),
             subagents_enabled: true,
+            subagents_max_depth: crate::config::SubagentsConfig::DEFAULT_MAX_DEPTH,
             subagent_model_overrides: std::collections::HashMap::new(),
             subagent_toggle: std::collections::HashMap::new(),
             subagent_roles: std::collections::HashMap::new(),
@@ -1872,6 +1876,13 @@ impl Config {
         self.subagent_toggle = sa.toggle;
         self.subagent_roles = sa.roles;
         self.subagent_personas = sa.personas;
+        let env = std::env::var(crate::config::SubagentsConfig::ENV_MAX_DEPTH).ok();
+        let remote = self
+            .remote_settings
+            .as_ref()
+            .and_then(|settings| settings.subagents_max_depth);
+        self.subagents_max_depth =
+            crate::config::SubagentsConfig::resolve_max_depth(env.as_deref(), sa.max_depth, remote);
     }
     /// Resolve all `#[serde(skip)]` runtime fields that have resolver functions.
     ///
@@ -1895,6 +1906,20 @@ impl Config {
         self.session_summary_model_override = ctx.cli_session_summary_model.map(|s| s.to_owned());
         let cli_flag = ctx.cli_subagents.unwrap_or(false);
         self.resolve_subagents(cli_flag, ctx.raw_config, ctx.cwd);
+        let env = std::env::var(crate::config::SubagentsConfig::ENV_MAX_DEPTH).ok();
+        let toml_max_depth = ctx
+            .raw_config
+            .get("subagents")
+            .and_then(|section| section.get("max_depth"))
+            .and_then(|value| value.as_integer());
+        let remote_max_depth = ctx
+            .remote_settings
+            .and_then(|settings| settings.subagents_max_depth);
+        self.subagents_max_depth = crate::config::SubagentsConfig::resolve_max_depth(
+            env.as_deref(),
+            toml_max_depth,
+            remote_max_depth,
+        );
         let tools = crate::config::ToolsConfig::resolve(ctx.raw_config);
         self.respect_gitignore = match self.requirements.respect_gitignore.pinned() {
             Some(pinned) => pinned,

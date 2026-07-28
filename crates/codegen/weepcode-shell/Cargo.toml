@@ -136,6 +136,7 @@ weepcode-tools = { path = "../weepcode-tools" }
 weepcode-tty-utils = { workspace = true }
 weepcode-system-power = { workspace = true }
 weepcode-workspace = { workspace = true }
+weepcode-workflow = { workspace = true }
 weepcode-subagent-resolution = { path = "../weepcode-subagent-resolution" }
 weepcode-agent = { path = "../weepcode-agent" }
 weepcode-config = { workspace = true }

@@ -139,6 +139,7 @@ pub(crate) struct SessionSpawnOptions<'a> {
     pub persisted_announcement_state: Option<
         crate::session::announcement_state::AnnouncementState,
     >,
+    pub persisted_workflow_runs: Vec<crate::session::workflow::store::RestoredWorkflowRun>,
     pub session_meta: Option<&'a acp::Meta>,
     pub managed_mcp_expires_at: Option<chrono::DateTime<chrono::Utc>>,
     pub model_agent_type: Option<&'a str>,
@@ -275,6 +276,7 @@ pub(crate) fn chat_session_spawn_options<'a>(
         persisted_plan_mode: None,
         persisted_goal_mode: None,
         persisted_announcement_state: None,
+        persisted_workflow_runs: Vec::new(),
         session_meta,
         managed_mcp_expires_at: None,
         model_agent_type,

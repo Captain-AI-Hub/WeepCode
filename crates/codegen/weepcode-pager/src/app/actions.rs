@@ -911,6 +911,8 @@ pub enum Action {
     },
     /// Toggle the expanded goal detail overlay.
     ToggleGoalDetail,
+    /// Toggle the workflow runs overlay.
+    ToggleWorkflows,
     Rewind,
     RewindShowPicker,
     RewindPickerSelect(usize),
@@ -1707,6 +1709,11 @@ pub enum Effect {
         agent_id: AgentId,
         session_id: acp::SessionId,
     },
+    /// Fetch workflows list from the shell.
+    FetchWorkflowsList {
+        agent_id: AgentId,
+        session_id: acp::SessionId,
+    },
     /// Toggle a skill via x.ai/skills/toggle (enable/disable without restart).
     ToggleSkill {
         agent_id: AgentId,
@@ -2327,6 +2334,11 @@ pub enum TaskResult {
     SkillsListLoaded {
         agent_id: AgentId,
         result: Result<Vec<weepcode_tools::implementations::skills::types::SkillInfo>, String>,
+    },
+    /// Workflows list loaded.
+    WorkflowsListLoaded {
+        agent_id: AgentId,
+        result: Result<Vec<crate::views::extensions_modal::WorkflowInfo>, String>,
     },
     /// Skill toggle completed (enable/disable).
     SkillsToggleDone {

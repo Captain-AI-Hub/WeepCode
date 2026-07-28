@@ -258,3 +258,28 @@ third_party 注释引用同步、旧品牌文件名一并 git mv。
 - [x] 平台范围限定为 Linux x86_64、Linux aarch64、macOS aarch64、Windows x86_64
 - [x] 手动触发时通过 `platform` 输入选择单个平台，或选择 `all` 跑全部平台
 - [x] 每个平台执行 fmt/check/terminal 测试/release build，并上传对应二进制 artifact
+
+## 运维任务 — Deep Research / Workflow 完整移植
+
+- [x] 从上游 `grok-build` 移植 `xai-workflow` 为 `weepcode-workflow`，保留 Rhai workflow 引擎、metadata
+      解析、journal、预算限制和校验逻辑。
+- [x] shell 侧接入 workflow registry/manager/tracker/store/notify，支持内置 `deep-research`、项目
+      `.weepcode/workflows/`、用户 `~/.weepcode/workflows/`、运行持久化、恢复、暂停、恢复、停止、保存。
+- [x] tools 侧接入 `workflow` tool、workflow owner、await-to-completion、结构化输出 schema、workflow run
+      cancel target，并把 workflow 归入 Execute 能力域。
+- [x] 最新上游调度边界：普通 `task` 支持 `[subagents].max_depth` / `WEEPCODE_SUBAGENTS_MAX_DEPTH`
+      / remote `subagents_max_depth` 配置，`workflow` tool 保持仅顶层会话可启动。
+- [x] pager 侧接入 `WorkflowUpdated` ACP notification、scrollback workflow block、`/workflows` overlay、
+      extensions modal workflow 列表、任务面板、状态栏和 `/tasks` 文本输出。
+- [x] 用户命令：`/deep-research <query>`、`/workflow <name> [args]`、`/workflow pause|resume|stop|save <run>`、
+      `/workflows`。
+- [x] 文档同步：`README.md`、`docs/project.md`、`docs/project-map.md`、`docs/deep-research.md`。
+
+**门禁**：
+1. `cargo check -p weepcode-workflow` 通过
+2. `PROTOC=$PWD/.tools/protoc/bin/protoc cargo check -p weepcode-tools` 通过
+3. `PROTOC=$PWD/.tools/protoc/bin/protoc cargo check -p weepcode-shell` 通过
+4. `PROTOC=$PWD/.tools/protoc/bin/protoc cargo check -p weepcode-pager` 通过
+5. `PROTOC=$PWD/.tools/protoc/bin/protoc cargo check -p weepcode-pager-bin` 通过
+6. `cargo fmt --all -- --check` 通过
+7. `git diff --check` 通过

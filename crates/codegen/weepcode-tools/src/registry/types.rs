@@ -697,6 +697,7 @@ impl ToolRegistryBuilder {
         b.register::<weepcode_build::SchedulerCreateTool>();
         b.register::<weepcode_build::SchedulerDeleteTool>();
         b.register::<weepcode_build::SchedulerListTool>();
+        b.register::<weepcode_build::WorkflowTool>();
         b.register::<codex::apply_patch::ApplyPatchTool>();
         b.register::<codex::list_dir::CodexListDirTool>();
         b.register::<codex::grep_files::CodexGrepFilesTool>();

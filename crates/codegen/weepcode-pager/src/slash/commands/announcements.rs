@@ -120,6 +120,7 @@ mod tests {
             models: &models,
             cwd: std::path::Path::new("."),
             has_session_announcements: true,
+            workflows_available: false,
             screen_mode: crate::app::ScreenMode::Fullscreen,
         };
         let items = AnnouncementsCommand
@@ -139,12 +140,14 @@ mod tests {
             models: &models,
             cwd: std::path::Path::new("."),
             has_session_announcements: false,
+            workflows_available: false,
             screen_mode: crate::app::ScreenMode::Fullscreen,
         }));
         assert!(cmd.visible(&AppCtx {
             models: &models,
             cwd: std::path::Path::new("."),
             has_session_announcements: true,
+            workflows_available: false,
             screen_mode: crate::app::ScreenMode::Fullscreen,
         }));
     }

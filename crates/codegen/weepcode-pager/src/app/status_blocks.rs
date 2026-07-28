@@ -46,8 +46,8 @@ pub(crate) fn queue_block_text(agent: &AgentView) -> String {
     }
 }
 
-/// `/tasks` body — a read-only list of background tasks, subagents, and
-/// scheduled (`/loop`) tasks.
+/// `/tasks` body — a read-only list of workflows, background tasks,
+/// subagents, and scheduled (`/loop`) tasks.
 ///
 /// Grouped subagents → background tasks/monitors → scheduled, each running-first
 /// then newest-first, matching the spirit of
@@ -55,8 +55,45 @@ pub(crate) fn queue_block_text(agent: &AgentView) -> String {
 pub(crate) fn tasks_block_text(agent: &AgentView) -> String {
     let mut rows: Vec<String> = Vec::new();
 
+    let mut workflows: Vec<_> = agent.workflow_runs.iter().collect();
+    workflows.sort_by(|a, b| {
+        b.is_active()
+            .cmp(&a.is_active())
+            .then(b.received_at.cmp(&a.received_at))
+            .then(a.run_id.cmp(&b.run_id))
+    });
+    for run in workflows {
+        let active = run.active_agent_count();
+        let agents = match active {
+            0 => String::new(),
+            1 => " · 1 agent".to_string(),
+            n => format!(" · {n} agents"),
+        };
+        let phase = run
+            .current_phase
+            .as_deref()
+            .map(str::trim)
+            .filter(|phase| !phase.is_empty())
+            .map(|phase| format!(" · {phase}"))
+            .unwrap_or_default();
+        rows.push(format!(
+            "  {:<9}Workflow · {}{phase}{agents}  ({})",
+            if run.is_active() {
+                "running".to_string()
+            } else {
+                run.status.replace('_', " ")
+            },
+            run.name,
+            format_duration(std::time::Duration::from_millis(run.live_elapsed_ms()))
+        ));
+    }
+
     // ── Subagents ──
-    let mut subs: Vec<_> = agent.subagent_sessions.values().collect();
+    let mut subs: Vec<_> = agent
+        .subagent_sessions
+        .values()
+        .filter(|s| s.workflow_run_id.is_none())
+        .collect();
     subs.sort_by(|a, b| {
         b.is_running()
             .cmp(&a.is_running())
@@ -136,7 +173,7 @@ pub(crate) fn tasks_block_text(agent: &AgentView) -> String {
     }
 
     if rows.is_empty() {
-        "No background tasks or subagents.".to_string()
+        "No background tasks, workflows, or subagents.".to_string()
     } else {
         let header = format!(
             "Task{} ({}):",
