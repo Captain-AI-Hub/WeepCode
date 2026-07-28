@@ -20,7 +20,7 @@ OpenAI Responses / OpenAI Compatible / Anthropic Messages 三种 API 格式的�
 ## 构建与验证
 
 ```sh
-export PROTOC=$PWD/.tools/protoc/bin/protoc   # proto codegen 需要（或 PATH 上的 protoc）
+export PROTOC=$PWD/.tools/protoc/bin/protoc   # 可选覆盖；构建也会自动发现该路径
 cargo check -p weepcode-pager-bin        # 快速验证（主二进制）
 cargo check -p weepcode-pager -p weepcode-shell -p weepcode-sampler
 cargo test -p <改动的crate>               # 改动涉及 crate 的测试

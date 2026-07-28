@@ -18,10 +18,29 @@
 每种 Provider 配置包含：base_url、api_key、模型 id、展示名称，持久化在
 `~/.weepcode/config.toml` 的 `[model.<name>]` 表中（文件权限 0600），重启免配置。
 
+## 安装
+
+Linux（x86_64 / aarch64）与 macOS Apple Silicon：
+
+```sh
+curl -fsSL https://github.com/Captain-AI-Hub/WeepCode/releases/latest/download/install.sh | sh
+```
+
+Windows x86_64（PowerShell）：
+
+```powershell
+irm https://github.com/Captain-AI-Hub/WeepCode/releases/latest/download/install.ps1 | iex
+```
+
+Unix 默认安装到 `~/.local/bin`，Windows 默认安装到
+`%LOCALAPPDATA%\Programs\WeepCode\bin` 并写入用户 `PATH`。可通过
+`WEEPCODE_INSTALL_DIR` 更改目录，或通过 `WEEPCODE_VERSION` 安装指定 tag。安装器会在解压前依据
+Release 中的 `SHA256SUMS` 校验安装包。
+
 ## 快速开始
 
 ```sh
-cargo run -p weepcode-pager-bin    # 构建并启动 TUI（产物名 weepcode）
+weepcode
 ```
 
 首次启动进入 **Configure API Provider** 表单：
@@ -58,13 +77,12 @@ TUI 内可用 `/deep-research <query>` 启动内置深度研究 workflow。运�
 ## 构建要求
 
 - **Rust**：工具链由 `rust-toolchain.toml` 锁定
-- **protoc**：proto codegen 需要；放在 `PATH` 上或设置 `PROTOC` 环境变量。
-  （上游的 DotSlash 方式仍兼容：安装 dotslash 后会自动使用 `bin/protoc`）
+- **protoc**：proto codegen 需要；构建会依次检查 `PROTOC`、仓库内
+  `.tools/protoc/bin/protoc`、DotSlash 的 `bin/protoc` 和 `PATH`。
 
 ```sh
-export PROTOC=$PWD/.tools/protoc/bin/protoc   # 如使用本地 protoc
-cargo build -p weepcode-pager-bin              # 产物：target/debug/weepcode
-cargo check -p weepcode-pager-bin              # 快速验证
+cargo build -p weepcode-pager-bin   # 产物：target/debug/weepcode
+cargo check -p weepcode-pager-bin   # 快速验证
 ```
 
 ## 仓库文档

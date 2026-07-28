@@ -511,19 +511,22 @@ impl MvpAgent {
     /// `acp_session.rs` fill in the real per-model gating as soon as a
     /// session starts.
     ///
-    /// Exception: `/goal` is gated on the `resolve_goal()` feature flag
+    /// Exceptions:
+    /// - `/goal` is gated on the `resolve_goal()` feature flag
     /// (a config/managed-settings switch known at initialize time) plus
     /// the `update_goal` tool, which is part of the default coding-agent
     /// toolset. So when the flag is on we advertise `/goal` pre-session;
     /// otherwise it wouldn't appear in the slash menu until after the
     /// first user turn created a session.
+    /// - Workflow runtime is built into every top-level WeepCode session, so
+    /// `/deep-research` and `/workflow` are safe to advertise before the live
+    /// tool catalog arrives.
     pub(crate) fn command_availability(
         &self,
     ) -> crate::session::slash_commands::CommandAvailability {
-        crate::session::slash_commands::CommandAvailability {
-            goal: self.cfg.borrow().resolve_goal().value,
-            ..crate::session::slash_commands::CommandAvailability::default()
-        }
+        crate::session::slash_commands::pre_session_command_availability(
+            self.cfg.borrow().resolve_goal().value,
+        )
     }
     /// `true` when data collection should be suppressed (team ZDR or
     /// coding-data-retention opt-out). Delegates to

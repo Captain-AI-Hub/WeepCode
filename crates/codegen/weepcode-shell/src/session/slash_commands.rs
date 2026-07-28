@@ -44,6 +44,7 @@ pub(crate) enum BuiltinGate {
     Goal,
     WorkflowLaunches,
     WorkflowManagement,
+    WorkflowLaunchOrManagement,
 }
 
 /// All built-in slash commands. Order here = display order in autocomplete.
@@ -240,7 +241,7 @@ pub(super) const BUILTIN_COMMANDS: &[BuiltinCommand] = &[
         description: "Launch a saved workflow, or manage a run (pause, resume, stop, save)",
         argument_hint: Some("<name> [args] | pause|resume|stop|save [name]"),
         aliases: &[],
-        gate: BuiltinGate::WorkflowManagement,
+        gate: BuiltinGate::WorkflowLaunchOrManagement,
         resolve: |args| {
             const OPS: [&str; 4] = ["pause", "resume", "stop", "save"];
             let trimmed = args.trim();
@@ -440,6 +441,7 @@ impl CommandAvailability {
             BuiltinGate::Goal => self.goal,
             BuiltinGate::WorkflowLaunches => self.workflows,
             BuiltinGate::WorkflowManagement => self.workflow_management,
+            BuiltinGate::WorkflowLaunchOrManagement => self.workflows || self.workflow_management,
         }
     }
 
@@ -456,6 +458,18 @@ impl CommandAvailability {
             workflows: true,
             workflow_management: true,
         }
+    }
+}
+
+/// Capabilities known before a session and its model-specific tool catalog
+/// exist. Workflow runtime is built into every top-level WeepCode session, so
+/// its launch commands are available immediately; runtime-dependent tools such
+/// as scheduler and memory remain fail-closed until the session update arrives.
+pub(crate) fn pre_session_command_availability(goal_enabled: bool) -> CommandAvailability {
+    CommandAvailability {
+        goal: goal_enabled,
+        workflows: true,
+        ..CommandAvailability::default()
     }
 }
 
@@ -1722,6 +1736,55 @@ mod tests {
             ..CommandAvailability::all_enabled()
         });
         assert!(!names.iter().any(|n| n == "goal"), "got: {names:?}");
+    }
+
+    #[test]
+    fn workflow_launch_capability_advertises_first_run_commands() {
+        let names = advertised_names(CommandAvailability {
+            workflows: true,
+            workflow_management: false,
+            ..CommandAvailability::default()
+        });
+        assert!(
+            names.iter().any(|name| name == "deep-research"),
+            "got: {names:?}"
+        );
+        assert!(
+            names.iter().any(|name| name == "workflow"),
+            "got: {names:?}"
+        );
+    }
+
+    #[test]
+    fn pre_session_commands_include_workflows_but_not_runtime_tool_gates() {
+        let names = advertised_names(pre_session_command_availability(false));
+        assert!(
+            names.iter().any(|name| name == "deep-research"),
+            "got: {names:?}"
+        );
+        assert!(
+            names.iter().any(|name| name == "workflow"),
+            "got: {names:?}"
+        );
+        assert!(!names.iter().any(|name| name == "loop"), "got: {names:?}");
+        assert!(!names.iter().any(|name| name == "goal"), "got: {names:?}");
+    }
+
+    #[test]
+    fn existing_run_keeps_management_command_without_launch_capability() {
+        let names = advertised_names(CommandAvailability {
+            workflows: false,
+            workflow_management: true,
+            ..CommandAvailability::default()
+        });
+        assert!(
+            names.iter().any(|name| name == "workflow"),
+            "got: {names:?}"
+        );
+        assert!(
+            !names.iter().any(|name| name == "deep-research"),
+            "got: {names:?}"
+        );
     }
 
     #[test]

@@ -280,6 +280,7 @@ fn default_weepcode_build_toolset() -> ToolServerConfig {
             (&search_tool::SearchTool).into(),
             (&use_tool::UseTool).into(),
             (&weepcode_build::UpdateGoalTool).into(),
+            (&weepcode_build::WorkflowTool).into(),
         ],
         behavior_preset: None,
     }
@@ -300,6 +301,7 @@ fn weepcode_build_concise_toolset() -> ToolServerConfig {
             (&weepcode_build::SchedulerListTool).into(),
             (&weepcode_build::MonitorTool).into(),
             (&weepcode_build::UpdateGoalTool).into(),
+            (&weepcode_build::WorkflowTool).into(),
         ],
         behavior_preset: None,
     }
@@ -329,6 +331,7 @@ pub fn weepcode_build_hashline_toolset(
         (&search_tool::SearchTool).into(),
         (&use_tool::UseTool).into(),
         (&weepcode_build::UpdateGoalTool).into(),
+        (&weepcode_build::WorkflowTool).into(),
     ]);
     ToolServerConfig {
         tools,
@@ -410,6 +413,7 @@ fn weepcode_build_plan_toolset() -> ToolServerConfig {
             (&search_tool::SearchTool).into(),
             (&use_tool::UseTool).into(),
             (&weepcode_build::UpdateGoalTool).into(),
+            (&weepcode_build::WorkflowTool).into(),
             (&weepcode_build::EnterPlanModeTool).into(),
             (&weepcode_build::ExitPlanModeTool).into(),
             (&weepcode_build::AskUserQuestionTool).into(),
@@ -441,6 +445,7 @@ fn orchestrator_toolset() -> ToolServerConfig {
             (&weepcode_build::ExitPlanModeTool).into(),
             (&weepcode_build::AskUserQuestionTool).into(),
             (&weepcode_build::UpdateGoalTool).into(),
+            (&weepcode_build::WorkflowTool).into(),
             (&weepcode_build::SchedulerCreateTool).into(),
             (&weepcode_build::SchedulerDeleteTool).into(),
             (&weepcode_build::SchedulerListTool).into(),
@@ -479,6 +484,7 @@ fn weepcode_build_plan_no_subagents_toolset() -> ToolServerConfig {
             (&search_tool::SearchTool).into(),
             (&use_tool::UseTool).into(),
             (&weepcode_build::UpdateGoalTool).into(),
+            (&weepcode_build::WorkflowTool).into(),
             (&weepcode_build::EnterPlanModeTool).into(),
             (&weepcode_build::ExitPlanModeTool).into(),
             (&weepcode_build::AskUserQuestionTool).into(),
@@ -510,6 +516,7 @@ fn weepcode_build_ask_user_toolset() -> ToolServerConfig {
             (&search_tool::SearchTool).into(),
             (&use_tool::UseTool).into(),
             (&weepcode_build::UpdateGoalTool).into(),
+            (&weepcode_build::WorkflowTool).into(),
             (&weepcode_build::AskUserQuestionTool).into(),
         ],
         behavior_preset: None,
@@ -2208,6 +2215,49 @@ description: Test default tool config
             !def.tool_config.tools.is_empty(),
             "default tool_config should have weepcode_build tools"
         );
+        assert!(
+            def.tool_config
+                .tools
+                .iter()
+                .any(|tool| tool.id == "WeepcodeBuild:workflow"),
+            "default tool_config must include WorkflowTool, got tool IDs: {:?}",
+            def.tool_config
+                .tools
+                .iter()
+                .map(|tool| &tool.id)
+                .collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn weepcode_build_toolsets_include_workflow_tool() {
+        let toolsets = [
+            ("default", default_weepcode_build_toolset()),
+            ("concise", weepcode_build_concise_toolset()),
+            ("hashline", weepcode_build_hashline_toolset(Vec::new())),
+            ("plan", weepcode_build_plan_toolset()),
+            ("orchestrator", orchestrator_toolset()),
+            (
+                "plan-no-subagents",
+                weepcode_build_plan_no_subagents_toolset(),
+            ),
+            ("ask-user", weepcode_build_ask_user_toolset()),
+        ];
+
+        for (name, toolset) in toolsets {
+            assert!(
+                toolset
+                    .tools
+                    .iter()
+                    .any(|tool| tool.id == "WeepcodeBuild:workflow"),
+                "{name} toolset must include WorkflowTool, got tool IDs: {:?}",
+                toolset
+                    .tools
+                    .iter()
+                    .map(|tool| &tool.id)
+                    .collect::<Vec<_>>()
+            );
+        }
     }
     #[test]
     fn test_permission_mode_round_trips() {

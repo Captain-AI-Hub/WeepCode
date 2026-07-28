@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       platform:
-        description: Platform to run
+        description: Platform to build
         required: true
         default: linux-x86_64
         type: choice
@@ -14,6 +14,15 @@ on:
           - macos-aarch64
           - windows-x86_64
           - all
+      publish_release:
+        description: Publish all platform packages to a GitHub Release
+        required: true
+        default: false
+        type: boolean
+      release_tag:
+        description: Release tag (blank uses v<package version>)
+        required: false
+        type: string
 
 permissions:
   contents: read
@@ -22,10 +31,74 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  linux-x86_64:
-    name: Linux x86_64
-    if: ${{ inputs.platform == 'linux-x86_64' || inputs.platform == 'all' }}
+  validate-inputs:
+    name: Validate inputs
     runs-on: ubuntu-24.04
+    outputs:
+      matrix: ${{ steps.platforms.outputs.matrix }}
+    steps:
+      - name: Validate release selection and resolve build matrix
+        id: platforms
+        env:
+          PUBLISH_RELEASE: ${{ inputs.publish_release }}
+          SELECTED_PLATFORM: ${{ inputs.platform }}
+        run: |
+          if [[ "$PUBLISH_RELEASE" == "true" && "$SELECTED_PLATFORM" != "all" ]]; then
+            echo "Publishing a release requires platform=all." >&2
+            exit 1
+          fi
+          all_platforms="$(jq -cn '
+            [
+              {
+                platform: "linux-x86_64",
+                display_name: "Linux x86_64",
+                runner: "ubuntu-24.04",
+                operating_system: "linux",
+                binary_path: "target/release-dist/weepcode",
+                asset_name: "weepcode-linux-x86_64.tar.gz"
+              },
+              {
+                platform: "linux-aarch64",
+                display_name: "Linux aarch64",
+                runner: "ubuntu-24.04-arm",
+                operating_system: "linux",
+                binary_path: "target/release-dist/weepcode",
+                asset_name: "weepcode-linux-aarch64.tar.gz"
+              },
+              {
+                platform: "macos-aarch64",
+                display_name: "macOS aarch64",
+                runner: "macos-15",
+                operating_system: "macos",
+                binary_path: "target/release-dist/weepcode",
+                asset_name: "weepcode-macos-aarch64.tar.gz"
+              },
+              {
+                platform: "windows-x86_64",
+                display_name: "Windows x86_64",
+                runner: "windows-2022",
+                operating_system: "windows",
+                binary_path: "target/release-dist/weepcode.exe",
+                asset_name: "weepcode-windows-x86_64.zip"
+              }
+            ]
+          ')"
+          if [[ "$SELECTED_PLATFORM" == "all" ]]; then
+            selected_platforms="$all_platforms"
+          else
+            selected_platforms="$(printf '%s' "$all_platforms" | jq -c \
+              --arg platform "$SELECTED_PLATFORM" \
+              '[.[] | select(.platform == $platform)]')"
+          fi
+          echo "matrix={\"include\":$selected_platforms}" >> "$GITHUB_OUTPUT"
+
+  build-packages:
+    name: ${{ matrix.display_name }}
+    needs: validate-inputs
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.validate-inputs.outputs.matrix) }}
+    runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@v4
       - name: Cache Cargo
@@ -37,127 +110,123 @@ jobs:
             target
           key: ${{ runner.os }}-${{ runner.arch }}-cargo-${{ hashFiles('Cargo.lock') }}
           restore-keys: ${{ runner.os }}-${{ runner.arch }}-cargo-
-      - name: Install protobuf compiler
+      - name: Install protobuf compiler (Linux)
+        if: ${{ matrix.operating_system == 'linux' }}
         run: |
           sudo apt-get update
           sudo apt-get install -y protobuf-compiler
-      - name: Set up Rust
-        run: rustup show
-      - name: Check formatting
-        run: cargo fmt --all -- --check
-      - name: Check main binary
-        run: cargo check --locked -p weepcode-pager-bin
-      - name: Test changed core crates
-        run: "cargo test --locked -p weepcode-pager-render terminal::"
-      - name: Build release binary
-        run: cargo build --locked --release -p weepcode-pager-bin
-      - name: Upload binary
-        uses: actions/upload-artifact@v4
-        with:
-          name: weepcode-linux-x86_64
-          path: target/release/weepcode
-          if-no-files-found: error
-
-  linux-aarch64:
-    name: Linux aarch64
-    if: ${{ inputs.platform == 'linux-aarch64' || inputs.platform == 'all' }}
-    runs-on: ubuntu-24.04-arm
-    steps:
-      - uses: actions/checkout@v4
-      - name: Cache Cargo
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.cargo/git
-            ~/.cargo/registry
-            target
-          key: ${{ runner.os }}-${{ runner.arch }}-cargo-${{ hashFiles('Cargo.lock') }}
-          restore-keys: ${{ runner.os }}-${{ runner.arch }}-cargo-
-      - name: Install protobuf compiler
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y protobuf-compiler
-      - name: Set up Rust
-        run: rustup show
-      - name: Check formatting
-        run: cargo fmt --all -- --check
-      - name: Check main binary
-        run: cargo check --locked -p weepcode-pager-bin
-      - name: Test changed core crates
-        run: "cargo test --locked -p weepcode-pager-render terminal::"
-      - name: Build release binary
-        run: cargo build --locked --release -p weepcode-pager-bin
-      - name: Upload binary
-        uses: actions/upload-artifact@v4
-        with:
-          name: weepcode-linux-aarch64
-          path: target/release/weepcode
-          if-no-files-found: error
-
-  macos-aarch64:
-    name: macOS aarch64
-    if: ${{ inputs.platform == 'macos-aarch64' || inputs.platform == 'all' }}
-    runs-on: macos-15
-    steps:
-      - uses: actions/checkout@v4
-      - name: Cache Cargo
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.cargo/git
-            ~/.cargo/registry
-            target
-          key: ${{ runner.os }}-${{ runner.arch }}-cargo-${{ hashFiles('Cargo.lock') }}
-          restore-keys: ${{ runner.os }}-${{ runner.arch }}-cargo-
-      - name: Install protobuf compiler
+      - name: Install protobuf compiler (macOS)
+        if: ${{ matrix.operating_system == 'macos' }}
         run: brew install protobuf
-      - name: Set up Rust
-        run: rustup show
-      - name: Check formatting
-        run: cargo fmt --all -- --check
-      - name: Check main binary
-        run: cargo check --locked -p weepcode-pager-bin
-      - name: Test changed core crates
-        run: "cargo test --locked -p weepcode-pager-render terminal::"
-      - name: Build release binary
-        run: cargo build --locked --release -p weepcode-pager-bin
-      - name: Upload binary
-        uses: actions/upload-artifact@v4
-        with:
-          name: weepcode-macos-aarch64
-          path: target/release/weepcode
-          if-no-files-found: error
-
-  windows-x86_64:
-    name: Windows x86_64
-    if: ${{ inputs.platform == 'windows-x86_64' || inputs.platform == 'all' }}
-    runs-on: windows-2022
-    steps:
-      - uses: actions/checkout@v4
-      - name: Cache Cargo
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.cargo/git
-            ~/.cargo/registry
-            target
-          key: ${{ runner.os }}-${{ runner.arch }}-cargo-${{ hashFiles('Cargo.lock') }}
-          restore-keys: ${{ runner.os }}-${{ runner.arch }}-cargo-
-      - name: Install protobuf compiler
+      - name: Install protobuf compiler (Windows)
+        if: ${{ matrix.operating_system == 'windows' }}
         run: choco install protoc -y
       - name: Set up Rust
         run: rustup show
       - name: Check formatting
         run: cargo fmt --all -- --check
+      - name: Check Unix installer syntax
+        if: ${{ matrix.operating_system != 'windows' }}
+        run: sh -n install.sh
+      - name: Check PowerShell installer syntax
+        if: ${{ matrix.operating_system == 'windows' }}
+        shell: pwsh
+        run: |
+          $tokens = $null
+          $parseErrors = $null
+          [System.Management.Automation.Language.Parser]::ParseFile(
+              (Resolve-Path install.ps1),
+              [ref]$tokens,
+              [ref]$parseErrors
+          ) | Out-Null
+          if ($parseErrors.Count -gt 0) {
+              $parseErrors | ForEach-Object { Write-Error $_ }
+              exit 1
+          }
       - name: Check main binary
         run: cargo check --locked -p weepcode-pager-bin
       - name: Test changed core crates
         run: "cargo test --locked -p weepcode-pager-render terminal::"
-      - name: Build release binary
-        run: cargo build --locked --release -p weepcode-pager-bin
-      - name: Upload binary
+      - name: Build distribution binary
+        run: cargo build --locked --profile release-dist --features release-dist -p weepcode-pager-bin
+      - name: Package Unix distribution
+        if: ${{ matrix.operating_system != 'windows' }}
+        env:
+          ASSET_NAME: ${{ matrix.asset_name }}
+          BINARY_PATH: ${{ matrix.binary_path }}
+          PLATFORM: ${{ matrix.platform }}
+        run: |
+          package_directory="dist/package-$PLATFORM"
+          mkdir -p "$package_directory"
+          cp "$BINARY_PATH" "$package_directory/weepcode"
+          cp README.md LICENSE THIRD-PARTY-NOTICES "$package_directory/"
+          strip "$package_directory/weepcode"
+          tar -C "$package_directory" -czf "dist/$ASSET_NAME" \
+            weepcode README.md LICENSE THIRD-PARTY-NOTICES
+      - name: Package Windows distribution
+        if: ${{ matrix.operating_system == 'windows' }}
+        shell: pwsh
+        env:
+          ASSET_NAME: ${{ matrix.asset_name }}
+          BINARY_PATH: ${{ matrix.binary_path }}
+          PLATFORM: ${{ matrix.platform }}
+        run: |
+          $packageDirectory = "dist/package-$env:PLATFORM"
+          New-Item -ItemType Directory -Force -Path $packageDirectory | Out-Null
+          Copy-Item $env:BINARY_PATH "$packageDirectory/weepcode.exe"
+          Copy-Item -Path README.md, LICENSE, THIRD-PARTY-NOTICES -Destination $packageDirectory
+          Compress-Archive -Path "$packageDirectory/*" -DestinationPath "dist/$env:ASSET_NAME"
+      - name: Upload installation package
         uses: actions/upload-artifact@v4
         with:
-          name: weepcode-windows-x86_64
-          path: target/release/weepcode.exe
+          name: ${{ matrix.asset_name }}
+          path: dist/${{ matrix.asset_name }}
           if-no-files-found: error
+
+  publish-release:
+    name: Publish GitHub Release
+    needs: build-packages
+    if: ${{ inputs.publish_release && inputs.platform == 'all' }}
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download installation packages
+        uses: actions/download-artifact@v4
+        with:
+          pattern: weepcode-*
+          path: dist
+          merge-multiple: true
+      - name: Resolve release tag
+        id: release
+        env:
+          RELEASE_TAG_INPUT: ${{ inputs.release_tag }}
+        run: |
+          release_tag="$RELEASE_TAG_INPUT"
+          if [[ -z "$release_tag" ]]; then
+            package_version="$(cargo metadata --no-deps --format-version 1 | jq -r \
+              '.packages[] | select(.name == "weepcode-pager-bin") | .version')"
+            release_tag="v$package_version"
+          fi
+          echo "release_tag=$release_tag" >> "$GITHUB_OUTPUT"
+      - name: Add installers and checksums
+        run: |
+          cp install.sh install.ps1 dist/
+          cd dist
+          sha256sum weepcode-*.tar.gz weepcode-*.zip install.sh install.ps1 > SHA256SUMS
+      - name: Create or update release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ steps.release.outputs.release_tag }}
+        run: |
+          if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+            gh release upload "$RELEASE_TAG" dist/* --clobber
+            gh release edit "$RELEASE_TAG" --latest
+          else
+            gh release create "$RELEASE_TAG" dist/* \
+              --target "$GITHUB_SHA" \
+              --title "WeepCode $RELEASE_TAG" \
+              --generate-notes \
+              --latest
+          fi

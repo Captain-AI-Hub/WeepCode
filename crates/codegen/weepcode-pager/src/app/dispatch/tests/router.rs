@@ -896,6 +896,52 @@ fn acp_bootstrap_command_appears_in_autocomplete() {
         snap.matches.iter().map(|r| &r.display).collect::<Vec<_>>()
     );
 }
+
+#[test]
+fn deep_research_bootstrap_command_matches_typed_prefix() {
+    let mut app = test_app();
+    app.bootstrap_acp_commands = vec![acp::AvailableCommand::new(
+        "deep-research".to_string(),
+        "Research with bounded parallel agents".to_string(),
+    )];
+    dispatch(Action::NewSession, &mut app);
+    let id = AgentId(0);
+    {
+        let agent = app.agents.get_mut(&id).unwrap();
+        agent.prompt.sync_acp_commands(
+            &agent.session.available_commands,
+            agent.session.available_tools.as_ref(),
+            &agent.session.models,
+        );
+    }
+    let models = app.agents[&id].session.models.clone();
+    app.agents
+        .get_mut(&id)
+        .unwrap()
+        .prompt
+        .textarea
+        .insert_str("/deep-");
+    app.agents
+        .get_mut(&id)
+        .unwrap()
+        .prompt
+        .refresh_slash(&models);
+    let snapshot = app.agents[&id].prompt.slash_snapshot();
+    assert!(snapshot.open, "dropdown should be open");
+    assert!(
+        snapshot
+            .matches
+            .iter()
+            .any(|row| row.display == "/deep-research"),
+        "/deep-research should match /deep-, got: {:?}",
+        snapshot
+            .matches
+            .iter()
+            .map(|row| &row.display)
+            .collect::<Vec<_>>()
+    );
+}
+
 #[test]
 fn acp_bootstrap_command_executes_as_passthrough() {
     let mut app = test_app();

@@ -17,6 +17,8 @@ WeepCode 支持基于 Rhai 的 workflow 运行时。`deep-research` 是内置 wo
 
 `<run>` 可以写 session 内唯一的 display handle，例如 `deep-research` 或 `deep-research-2`。
 运行列表、任务面板、状态栏和 `/tasks` 文本块都会显示 workflow 状态；workflow 内部子 agent 不会重复出现在普通 subagent 分组里。
+启动后输入 `/deep-` 应直接出现 `/deep-research` autocomplete；该命令和 `/workflow` 会在
+session 创建前通过 initialize metadata 广告，不需要先运行一次 workflow 才出现。
 
 ## Workflow 目录
 

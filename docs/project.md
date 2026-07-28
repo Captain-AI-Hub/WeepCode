@@ -77,6 +77,8 @@ TUI 内部架构：`Action`（输入意图）→ `dispatch`（同步状态变更
 Deep Research 是内置 workflow，运行在 shell 侧，pager 只负责显示和交互。
 
 1. 用户执行 `/deep-research <query>`，或模型调用 `workflow` tool。
+   shell 在 initialize metadata 中预广告 `/deep-research` 与 `/workflow`，pager 因而可在首个
+   session 创建前提供 slash autocomplete；live session 后再由 `AvailableCommandsUpdate` 更新能力列表。
 2. shell 的 `WorkflowRegistry` 解析内置脚本、项目 `.weepcode/workflows/` 和用户
    `~/.weepcode/workflows/` 中的 Rhai workflow。
 3. `WorkflowManager` 创建 `run_id`、session 内 display handle、journal 和 `WorkflowRunStore` 持久化记录。
@@ -173,4 +175,9 @@ Deep Research 是内置 workflow，运行在 shell 侧，pager 只负责显示�
 - CI 仅通过 `workflow_dispatch` 手动触发，不绑定 `push` / `pull_request`。
 - 支持平台范围固定为：Linux x86_64、Linux aarch64、macOS aarch64、Windows x86_64。
 - 每次手动触发通过 `platform` 输入选择单个平台，或选择 `all` 跑全部平台。
-- 每个平台执行：安装 protobuf compiler、`cargo fmt --all -- --check`、`cargo check --locked -p weepcode-pager-bin`、`cargo test --locked -p weepcode-pager-render terminal::`、`cargo build --locked --release -p weepcode-pager-bin`，并上传 `weepcode` / `weepcode.exe` artifact。
+- 每个平台执行格式、对应安装器语法、主二进制检查和 terminal 测试，再用 `release-dist` profile 构建；Unix 产物封装为
+  `weepcode-<platform>.tar.gz`，Windows 封装为 `weepcode-windows-x86_64.zip`。
+- `publish_release=true` 仅允许与 `platform=all` 组合：CI 创建或更新 GitHub Release，上传四个平台安装包、
+  `install.sh`、`install.ps1` 与 `SHA256SUMS`，并标记为 latest release。
+- Unix 安装器按 OS/架构选择包，默认写入 `~/.local/bin`；PowerShell 安装器默认写入用户
+  `%LOCALAPPDATA%\Programs\WeepCode\bin` 并持久化用户 `PATH`。两者安装前均校验 SHA-256。

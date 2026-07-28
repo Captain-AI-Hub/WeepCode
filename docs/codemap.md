@@ -257,7 +257,9 @@ third_party 注释引用同步、旧品牌文件名一并 git mv。
 - [x] 新增 GitHub Actions 手动 CI：仅 `workflow_dispatch`，不自动响应 `push` / `pull_request`
 - [x] 平台范围限定为 Linux x86_64、Linux aarch64、macOS aarch64、Windows x86_64
 - [x] 手动触发时通过 `platform` 输入选择单个平台，或选择 `all` 跑全部平台
-- [x] 每个平台执行 fmt/check/terminal 测试/release build，并上传对应二进制 artifact
+- [x] 每个平台执行 fmt/安装器语法/check/terminal 测试，以 `release-dist` 构建并上传 `tar.gz` / `zip` 安装包
+- [x] `platform=all` 可选发布 GitHub Release，附四平台安装包、SHA-256 清单和 Unix/PowerShell 安装器
+- [x] README 提供 `curl ... | sh` 与 `irm ... | iex` 一键安装命令
 
 ## 运维任务 — Deep Research / Workflow 完整移植
 
@@ -273,6 +275,8 @@ third_party 注释引用同步、旧品牌文件名一并 git mv。
       extensions modal workflow 列表、任务面板、状态栏和 `/tasks` 文本输出。
 - [x] 用户命令：`/deep-research <query>`、`/workflow <name> [args]`、`/workflow pause|resume|stop|save <run>`、
       `/workflows`。
+- [x] 首次启动 autocomplete：initialize metadata 预广告 `/deep-research` 与 `/workflow`；`/workflow`
+      在可启动 workflow 或已有 run 可管理时均保持可见。
 - [x] 文档同步：`README.md`、`docs/project.md`、`docs/project-map.md`、`docs/deep-research.md`。
 
 **门禁**：
