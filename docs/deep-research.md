@@ -8,6 +8,7 @@ WeepCode 支持基于 Rhai 的 workflow 运行时。`deep-research` 是内置 wo
 | 命令 | 用途 |
 |---|---|
 | `/deep-research <query>` | 启动内置 deep-research workflow。 |
+| `/create-workflow` | 加载内置 Workflow 编写指南，创建并校验自定义 workflow。 |
 | `/workflows` | 打开 workflow 运行列表与详情视图。 |
 | `/workflow <name> [args]` | 启动已注册 workflow。 |
 | `/workflow pause <run>` | 暂停正在运行的 workflow。 |
@@ -19,6 +20,11 @@ WeepCode 支持基于 Rhai 的 workflow 运行时。`deep-research` 是内置 wo
 运行列表、任务面板、状态栏和 `/tasks` 文本块都会显示 workflow 状态；workflow 内部子 agent 不会重复出现在普通 subagent 分组里。
 启动后输入 `/deep-` 应直接出现 `/deep-research` autocomplete；该命令和 `/workflow` 会在
 session 创建前通过 initialize metadata 广告，不需要先运行一次 workflow 才出现。
+
+`/create-workflow` 是随 WeepCode 二进制编译并在启动时自动释放的内置 skill。它会引导 agent
+收集目标、编写 Rhai workflow、用 `workflow` tool 的 `validate_only` 做单路径 smoke check，
+再保存到项目或用户 Workflow 目录。发行包内的 skill 原文直接来自 Grok Build；释放到
+`~/.weepcode/skills/create-workflow/SKILL.md` 时只机械替换产品名和 `.weepcode` 目录。
 
 ## Workflow 目录
 

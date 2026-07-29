@@ -277,6 +277,8 @@ third_party 注释引用同步、旧品牌文件名一并 git mv。
       `/workflows`。
 - [x] 首次启动 autocomplete：initialize metadata 预广告 `/deep-research` 与 `/workflow`；`/workflow`
       在可启动 workflow 或已有 run 可管理时均保持可见。
+- [x] 从本机 Grok 发行包直接复制原版 `create-workflow` skill，编译进单二进制并在 shell
+      首次启动/同版本缺文件修复时自动释放到 `~/.weepcode/skills/create-workflow/`。
 - [x] 文档同步：`README.md`、`docs/project.md`、`docs/project-map.md`、`docs/deep-research.md`。
 
 **门禁**：
@@ -287,3 +289,20 @@ third_party 注释引用同步、旧品牌文件名一并 git mv。
 5. `PROTOC=$PWD/.tools/protoc/bin/protoc cargo check -p weepcode-pager-bin` 通过
 6. `cargo fmt --all -- --check` 通过
 7. `git diff --check` 通过
+
+## 运维任务 — 安全研究高优先级内置 Skill
+
+- [x] 从本机 Grok 发行包直接复制 `review`、`design` 和完整 `pdf` skill，原始
+      `SKILL.md` 不重写。
+- [x] 把 reviewer/design persona、PDF 参考文档、辅助脚本和二进制表单编译进单二进制。
+- [x] shell 首次启动/版本升级自动释放全部资源；同版本缺文件自动修复。
+- [x] 修复 Grok Skill 中已经失配的 persona Markdown 路径，使释放后的副本读取实际
+      内置的 TOML 文件。
+- [x] 用户指南与架构文档同步。
+
+**门禁**：
+1. `PROTOC=$PWD/.tools/protoc/bin/protoc cargo test -p weepcode-shell builtin::tests` 通过
+2. `PROTOC=$PWD/.tools/protoc/bin/protoc cargo check -p weepcode-shell` 通过
+3. `PROTOC=$PWD/.tools/protoc/bin/protoc cargo check -p weepcode-pager-bin` 通过
+4. `cargo fmt --all -- --check` 通过
+5. `git diff --check` 通过
