@@ -766,7 +766,7 @@ async fn update_config_changes_subsequent_request_model() {
 }
 
 // ---------------------------------------------------------------------------
-// Responses doom-loop check signals
+// Responses stream compatibility
 // ---------------------------------------------------------------------------
 
 fn responses_config(base_url: String, doom_loop: Option<DoomLoopRecoveryPolicy>) -> SamplerConfig {
@@ -775,6 +775,53 @@ fn responses_config(base_url: String, doom_loop: Option<DoomLoopRecoveryPolicy>)
     cfg.doom_loop_recovery = doom_loop;
     cfg
 }
+
+/// Compatible providers may interleave a non-standard heartbeat with typed
+/// Responses events. The heartbeat must not fail the turn or trigger a retry.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn responses_keepalive_is_ignored_without_retrying() {
+    let counter = Arc::new(AtomicU32::new(0));
+    let counter_handler = Arc::clone(&counter);
+    let app = Router::new().route(
+        "/v1/responses",
+        post(move || {
+            let counter = Arc::clone(&counter_handler);
+            async move {
+                counter.fetch_add(1, Ordering::SeqCst);
+                let mut events = sse::responses_api_reasoning_and_text_events(
+                    "some thought",
+                    "an answer",
+                    "test-model",
+                );
+                events.insert(1, SseEvent::data(r#"{"type":"keepalive"}"#));
+                let events = sse_events_to_axum(events);
+                Sse::new(stream::iter(
+                    events.into_iter().map(Ok::<_, std::convert::Infallible>),
+                ))
+            }
+        }),
+    );
+    let server = MockServer::spawn(app).await;
+    let (event_tx, _event_rx) = mpsc::unbounded_channel();
+    let handle = SamplerActor::spawn(
+        responses_config(server.base_url(), None),
+        RetryPolicy::default(),
+        event_tx,
+    );
+
+    let result = handle
+        .submit_and_collect(RequestId::from("req-keepalive"), user_request("hi"))
+        .await;
+    server.shutdown();
+
+    let (response, _metrics) = result.expect("a keepalive frame must not fail the turn");
+    assert_eq!(counter.load(Ordering::SeqCst), 1, "no retry");
+    assert_eq!(response.assistant_text(), "an answer");
+}
+
+// ---------------------------------------------------------------------------
+// Responses doom-loop check signals
+// ---------------------------------------------------------------------------
 
 /// Server-reported doom-loop triggers flow through the actor rung onto the
 /// completed response, without retries. The trigger is non-confident

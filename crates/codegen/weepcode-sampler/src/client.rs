@@ -44,6 +44,9 @@ const ANTHROPIC_DEFAULT_MAX_TOKENS: u32 = 128_000;
 /// when the caller didn't set one explicitly via `extra_headers`.
 const ANTHROPIC_VERSION: &str = "2023-06-01";
 
+/// Non-standard Responses SSE heartbeat emitted by some compatible providers.
+const RESPONSES_KEEPALIVE_EVENT_TYPE: &str = "keepalive";
+
 /// Per-request `x-weepcode-*` headers. Optional fields are skipped when empty/`None`.
 struct WeepcodeRequestHeaders<'a> {
     conv_id: &'a str,
@@ -102,6 +105,24 @@ fn is_first_party_inference_base_url(base_url: &str) -> bool {
         .unwrap_or_default()
         .to_ascii_lowercase();
     host == "x.ai" || host.ends_with(".x.ai") || host == "grok.com" || host.ends_with(".grok.com")
+}
+
+/// Whether a Responses SSE frame is a provider heartbeat rather than a typed
+/// OpenAI event.
+///
+/// Providers may identify the heartbeat through the SSE `event:` field, the
+/// JSON payload's top-level `type`, or both. The payload check parses JSON and
+/// compares the exact top-level tag so normal model text that merely contains
+/// the word "keepalive" is never swallowed.
+fn is_responses_keepalive_event(event_name: &str, data: &str) -> bool {
+    if event_name == RESPONSES_KEEPALIVE_EVENT_TYPE {
+        return true;
+    }
+    data.contains(RESPONSES_KEEPALIVE_EVENT_TYPE)
+        && serde_json::from_str::<serde_json::Value>(data).is_ok_and(|value| {
+            value.get("type").and_then(|event_type| event_type.as_str())
+                == Some(RESPONSES_KEEPALIVE_EVENT_TYPE)
+        })
 }
 
 /// Parse the `Retry-After` response header as delta-seconds.
@@ -1500,10 +1521,11 @@ impl SamplingClient {
                         // the check disabled, the shared name-or-payload-type
                         // predicate guards against a server emitting it
                         // despite no opt-in (rollout skew), named or not.
-                        let swallow = match &doom_loop_for_stream {
-                            Some(collector) => collector.absorb(&event.event, data),
-                            None => is_check_event(&event.event, data),
-                        };
+                        let swallow = is_responses_keepalive_event(&event.event, data)
+                            || match &doom_loop_for_stream {
+                                Some(collector) => collector.absorb(&event.event, data),
+                                None => is_check_event(&event.event, data),
+                            };
                         if swallow {
                             Some(None)
                         } else if let Some(stream_error) = try_parse_stream_error(data) {
@@ -2830,6 +2852,29 @@ mod tests {
             event,
             rs::ResponseStreamEvent::ResponseOutputTextDelta(_)
         ));
+    }
+
+    #[test]
+    fn responses_keepalive_detection_accepts_name_or_exact_payload_type() {
+        assert!(is_responses_keepalive_event("keepalive", "{}"));
+        assert!(is_responses_keepalive_event("", r#"{"type":"keepalive"}"#));
+        assert!(is_responses_keepalive_event(
+            "message",
+            r#"{"type":"keepalive","timestamp":123}"#
+        ));
+    }
+
+    #[test]
+    fn responses_keepalive_detection_preserves_content_and_unknown_events() {
+        assert!(!is_responses_keepalive_event(
+            "",
+            r#"{"type":"response.output_text.delta","delta":"keepalive"}"#
+        ));
+        assert!(!is_responses_keepalive_event(
+            "future-event",
+            r#"{"type":"future.event"}"#
+        ));
+        assert!(!is_responses_keepalive_event("", "not-json keepalive"));
     }
 
     #[test]
