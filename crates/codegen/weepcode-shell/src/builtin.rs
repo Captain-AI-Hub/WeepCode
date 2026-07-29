@@ -1,6 +1,34 @@
 //! Built-in files extracted to `~/.weepcode/` on startup.
 
+use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
+use std::collections::BTreeMap;
+
 const BUNDLED_FILES: &[(&str, &str)] = &[("README.md", include_str!("../README.md"))];
+
+const BUNDLED_SKILL_MANIFEST_FILENAME: &str = ".bundled_skill_manifest.json";
+
+/// Hashes produced by the first merged Grok-skill release before WeepCode's
+/// runtime-contract fixes. They let the next same-version startup recognize
+/// those files as managed and upgrade them without claiming user-authored
+/// files that happen to use the same skill name.
+const PRE_FIX_BUNDLED_SKILL_HASHES: &[(&str, &str)] = &[
+    (
+        "skills/review/SKILL.md",
+        "1e93972125ef8b8bab9f963dfa23eaea4c26e854cc196d562d1cf3b23ada8594",
+    ),
+    (
+        "skills/design/SKILL.md",
+        "9fc5bb7e3a4e96f3bb094505d9f9ee55308114c170edc536788dd2511fc43f19",
+    ),
+];
+
+#[derive(Debug, Default, Deserialize, Serialize)]
+struct BundledSkillManifest {
+    /// Relative path under `weepcode_home` -> SHA-256 of the last content
+    /// successfully written by WeepCode.
+    files: BTreeMap<String, String>,
+}
 
 const HELP_SKILL_MD: &str = include_str!("../skills/help/SKILL.md");
 const CREATE_SKILL_MD: &str = include_str!("../skills/create-skill/SKILL.md");
@@ -119,38 +147,42 @@ const BUNDLED_SKILL_SUPPORT_FILES: &[(&str, &[u8])] = &[
     bundled_skill_support_file!("pdf/forms/f8995--2025.pdf"),
 ];
 
-/// True when a discovered skill is the copy `extract_bundled_files` wrote to
-/// `<weepcode_home>/skills/<name>/SKILL.md`. Exact-path (not prefix) so a
-/// user-authored skill that reuses a bundled name — even elsewhere under
-/// `<weepcode_home>/skills/` — is never labeled bundled. Lives beside the
-/// extraction code so the target layout and this predicate move together.
-/// Used by inspect, which otherwise sees extracted copies as user skills.
+/// True when a discovered skill is an unmodified copy managed by the bundled
+/// skill manifest. A user-authored skill at the same path is preserved and is
+/// therefore not mislabeled as bundled by `weepcode inspect`.
 pub(crate) fn is_extracted_bundled_skill(
     name: &str,
     path: &std::path::Path,
     weepcode_home: &std::path::Path,
 ) -> bool {
-    BUNDLED_SKILLS.iter().any(|&(n, _)| n == name)
-        && path == weepcode_home.join("skills").join(name).join("SKILL.md")
+    if !BUNDLED_SKILLS
+        .iter()
+        .any(|&(bundled_name, _)| bundled_name == name)
+        || path != weepcode_home.join("skills").join(name).join("SKILL.md")
+    {
+        return false;
+    }
+
+    let relative_path = format!("skills/{name}/SKILL.md");
+    let manifest = load_bundled_skill_manifest(weepcode_home);
+    let Some(managed_hash) = manifest.files.get(&relative_path) else {
+        return false;
+    };
+    std::fs::read(path)
+        .map(|content| bundled_content_hash(&content) == *managed_hash)
+        .unwrap_or(false)
 }
 
-/// Resolve the content for a skill, applying any name-specific transforms.
+/// Resolve the content for a skill, applying WeepCode-specific adaptations.
 fn resolve_skill_content(name: &str, raw: &str, weepcode_home: &std::path::Path) -> String {
     match name {
-        // Help skill needs path substitution so absolute paths work.
         "help" => {
             let weepcode_home_str = format!("{}/", weepcode_home.to_string_lossy());
             raw.replace("~/.weepcode/", &weepcode_home_str)
         }
-        // Keep the bundled source byte-for-byte aligned with the Grok release
-        // artifact; only adapt product names and workflow paths on extraction.
         "create-workflow" => raw
             .replace("Grok Build", "WeepCode")
             .replace(".grok/", ".weepcode/"),
-        // The Grok archive stores personas as TOML in its bundled persona
-        // catalog, while these two skills still reference the older Markdown
-        // support-file layout. Keep the vendored skill source unchanged and
-        // point the extracted copy at the byte-identical TOML resources.
         "review" => raw.replace(
             "../shared/personas/reviewer.md",
             "../shared/personas/reviewer.toml",
@@ -170,98 +202,155 @@ fn resolve_skill_content(name: &str, raw: &str, weepcode_home: &std::path::Path)
 
 /// Extract bundled files to `~/.weepcode/` on startup.
 ///
-/// Full extraction runs on every version bump. On same-version startups,
-/// a lightweight check ensures all expected skill files exist on disk —
-/// any missing files are extracted individually.
-///
-/// Legacy/renamed bundled skills (see `LEGACY_BUNDLED_SKILL_NAMES`) are
-/// always cleaned up first so that old slash commands disappear after
-/// a rename (e.g. the previous `/check` after the move to `/check-work`).
+/// Skill files are reconciled through a hash manifest on every startup. Files
+/// still matching the last WeepCode-written hash can be upgraded or repaired;
+/// files modified or created by the user are never overwritten.
 pub fn extract_bundled_files(weepcode_home: &std::path::Path) {
-    // Always remove legacy/renamed bundled skills first (e.g. the old
-    // `check` directory after the rename to `check-work`). This runs on
-    // every startup so users get cleaned up even without hitting a
-    // version-bump marker change.
     remove_legacy_bundled_skills(weepcode_home);
 
     let version = weepcode_version::VERSION;
-    let marker = weepcode_home.join(".metadata_version");
-
-    if let Ok(existing) = std::fs::read_to_string(&marker)
-        && existing.trim() == version
-    {
-        // Same version — only extract skill files that are missing on disk.
-        // This handles skills added between version bumps.
-        extract_missing_skills(weepcode_home);
-        return;
-    }
+    let version_marker = weepcode_home.join(".metadata_version");
+    let is_same_version = std::fs::read_to_string(&version_marker)
+        .map(|existing| existing.trim() == version)
+        .unwrap_or(false);
 
     let _ = std::fs::create_dir_all(weepcode_home);
+    let mut skill_manifest = load_bundled_skill_manifest(weepcode_home);
 
-    // Clean up cached changelog files from previous version so
-    // /release-notes fetches fresh content for the new version.
-    for stale in &["CHANGELOG.json", "CHANGELOG.md"] {
-        let _ = std::fs::remove_file(weepcode_home.join(stale));
-    }
+    if !is_same_version {
+        for stale in &["CHANGELOG.json", "CHANGELOG.md"] {
+            let _ = std::fs::remove_file(weepcode_home.join(stale));
+        }
 
-    for &(filename, content) in BUNDLED_FILES {
-        if let Err(e) = std::fs::write(weepcode_home.join(filename), content) {
-            tracing::debug!(error = %e, filename, "Failed to extract bundled file");
+        for &(filename, content) in BUNDLED_FILES {
+            if let Err(error) = std::fs::write(weepcode_home.join(filename), content) {
+                tracing::debug!(error = %error, filename, "Failed to extract bundled file");
+            }
         }
     }
 
-    // Skill SKILL.md files.
-    for &(name, raw) in BUNDLED_SKILLS {
-        let skill_dir = weepcode_home.join("skills").join(name);
-        let _ = std::fs::create_dir_all(&skill_dir);
-        let content = resolve_skill_content(name, raw, weepcode_home);
-        if let Err(e) = std::fs::write(skill_dir.join("SKILL.md"), content) {
-            tracing::debug!(error = %e, name, "Failed to write skill");
-        }
-    }
-    extract_skill_support_files(weepcode_home, false);
+    reconcile_bundled_skills(weepcode_home, &mut skill_manifest);
+    save_bundled_skill_manifest(weepcode_home, &skill_manifest);
 
-    let _ = std::fs::write(&marker, version);
-    tracing::debug!(version, "Extracted bundled files");
+    if !is_same_version {
+        let _ = std::fs::write(&version_marker, version);
+        tracing::debug!(version, "Extracted bundled files");
+    }
 }
 
-/// Extract only missing skill SKILL.md files (same-version fast path).
-/// Iterates `BUNDLED_SKILLS` so adding a new skill there is sufficient.
-fn extract_missing_skills(weepcode_home: &std::path::Path) {
-    for &(name, raw) in BUNDLED_SKILLS {
-        let skill_md = weepcode_home.join("skills").join(name).join("SKILL.md");
-        if skill_md.exists() {
+fn reconcile_bundled_skills(
+    weepcode_home: &std::path::Path,
+    skill_manifest: &mut BundledSkillManifest,
+) {
+    let mut managed_skill_names = BTreeMap::new();
+    for &(name, raw_content) in BUNDLED_SKILLS {
+        let relative_path = format!("skills/{name}/SKILL.md");
+        let resolved_content = resolve_skill_content(name, raw_content, weepcode_home);
+        let is_managed = reconcile_bundled_skill_file(
+            weepcode_home,
+            &relative_path,
+            resolved_content.as_bytes(),
+            skill_manifest,
+        );
+        managed_skill_names.insert(name, is_managed);
+    }
+
+    for &(support_relative_path, content) in BUNDLED_SKILL_SUPPORT_FILES {
+        let owner_name = bundled_support_file_owner(support_relative_path);
+        if !managed_skill_names
+            .get(owner_name)
+            .copied()
+            .unwrap_or(false)
+        {
             continue;
         }
-        let _ = std::fs::create_dir_all(skill_md.parent().unwrap());
-        let content = resolve_skill_content(name, raw, weepcode_home);
-        let _ = std::fs::write(&skill_md, content);
+        let relative_path = format!("skills/{support_relative_path}");
+        reconcile_bundled_skill_file(weepcode_home, &relative_path, content, skill_manifest);
     }
-    extract_skill_support_files(weepcode_home, true);
 }
 
-/// Extract nested skill resources.
-///
-/// On a version bump all managed resources are refreshed. The same-version
-/// fast path writes only missing files, matching the repair behavior for
-/// top-level `SKILL.md` files.
-fn extract_skill_support_files(weepcode_home: &std::path::Path, only_missing: bool) {
-    let skills_dir = weepcode_home.join("skills");
-    for &(relative_path, content) in BUNDLED_SKILL_SUPPORT_FILES {
-        let destination = skills_dir.join(relative_path);
-        if only_missing && destination.exists() {
-            continue;
+fn bundled_support_file_owner(relative_path: &str) -> &str {
+    if relative_path.starts_with("pdf/") {
+        "pdf"
+    } else if relative_path == "shared/personas/reviewer.toml" {
+        "review"
+    } else {
+        "design"
+    }
+}
+
+fn reconcile_bundled_skill_file(
+    weepcode_home: &std::path::Path,
+    relative_path: &str,
+    bundled_content: &[u8],
+    skill_manifest: &mut BundledSkillManifest,
+) -> bool {
+    let destination = weepcode_home.join(relative_path);
+    let bundled_hash = bundled_content_hash(bundled_content);
+    let existing_content = std::fs::read(&destination).ok();
+    let existing_hash = existing_content.as_deref().map(bundled_content_hash);
+    let recorded_hash = skill_manifest.files.get(relative_path);
+    let pre_fix_hash = PRE_FIX_BUNDLED_SKILL_HASHES
+        .iter()
+        .find_map(|(path, hash)| (*path == relative_path).then_some(*hash));
+
+    let is_safe_to_manage = match existing_hash.as_deref() {
+        None => true,
+        Some(hash) if hash == bundled_hash => true,
+        Some(hash) if recorded_hash.is_some_and(|recorded| recorded == hash) => true,
+        Some(hash) if pre_fix_hash.is_some_and(|previous| previous == hash) => true,
+        Some(_) => false,
+    };
+
+    if !is_safe_to_manage {
+        tracing::warn!(
+            path = relative_path,
+            "Preserving user-modified file that conflicts with a bundled skill"
+        );
+        return false;
+    }
+
+    if existing_hash.as_deref() != Some(bundled_hash.as_str()) {
+        if let Some(parent) = destination.parent()
+            && let Err(error) = std::fs::create_dir_all(parent)
+        {
+            tracing::debug!(error = %error, path = relative_path, "Failed to create bundled skill directory");
+            return false;
         }
-        if let Some(parent) = destination.parent() {
-            let _ = std::fs::create_dir_all(parent);
+        if let Err(error) = std::fs::write(&destination, bundled_content) {
+            tracing::debug!(error = %error, path = relative_path, "Failed to write bundled skill file");
+            return false;
         }
-        if let Err(error) = std::fs::write(&destination, content) {
-            tracing::debug!(
-                error = %error,
-                path = %relative_path,
-                "Failed to write bundled skill support file"
-            );
-        }
+    }
+
+    skill_manifest
+        .files
+        .insert(relative_path.to_string(), bundled_hash);
+    true
+}
+
+fn bundled_content_hash(content: &[u8]) -> String {
+    format!("{:x}", Sha256::digest(content))
+}
+
+fn load_bundled_skill_manifest(weepcode_home: &std::path::Path) -> BundledSkillManifest {
+    let path = weepcode_home.join(BUNDLED_SKILL_MANIFEST_FILENAME);
+    std::fs::read(&path)
+        .ok()
+        .and_then(|content| serde_json::from_slice(&content).ok())
+        .unwrap_or_default()
+}
+
+fn save_bundled_skill_manifest(
+    weepcode_home: &std::path::Path,
+    skill_manifest: &BundledSkillManifest,
+) {
+    let path = weepcode_home.join(BUNDLED_SKILL_MANIFEST_FILENAME);
+    let Ok(content) = serde_json::to_vec_pretty(skill_manifest) else {
+        return;
+    };
+    if let Err(error) = std::fs::write(&path, content) {
+        tracing::debug!(error = %error, "Failed to persist bundled skill manifest");
     }
 }
 
@@ -308,24 +397,40 @@ mod tests {
     use super::*;
 
     #[test]
-    fn version_bump_re_extracts_all_files() {
+    fn version_bump_preserves_user_modified_skill_files() {
         let tmp = tempfile::tempdir().unwrap();
         let home = tmp.path();
 
         extract_bundled_files(home);
 
-        for &(filename, _) in BUNDLED_FILES {
-            std::fs::write(home.join(filename), "old").unwrap();
-        }
-        for &(name, _) in BUNDLED_SKILLS {
-            std::fs::write(home.join(format!("skills/{name}/SKILL.md")), "old").unwrap();
-        }
-        for &(relative_path, _) in BUNDLED_SKILL_SUPPORT_FILES {
-            std::fs::write(home.join("skills").join(relative_path), "old").unwrap();
-        }
+        let review_path = home.join("skills/review/SKILL.md");
+        let support_path = home.join("skills/pdf/reference.md");
+        std::fs::write(&review_path, "user review skill").unwrap();
+        std::fs::write(&support_path, "user pdf reference").unwrap();
         std::fs::write(home.join(".metadata_version"), "0.0.0-stale").unwrap();
 
-        // Simulate legacy skills that should be cleaned up.
+        extract_bundled_files(home);
+
+        assert_eq!(
+            std::fs::read_to_string(&review_path).unwrap(),
+            "user review skill"
+        );
+        assert_eq!(
+            std::fs::read_to_string(&support_path).unwrap(),
+            "user pdf reference"
+        );
+        assert!(!is_extracted_bundled_skill("review", &review_path, home));
+    }
+
+    #[test]
+    fn version_bump_refreshes_unmodified_managed_files_and_removes_legacy_skills() {
+        let tmp = tempfile::tempdir().unwrap();
+        let home = tmp.path();
+
+        extract_bundled_files(home);
+        let review_path = home.join("skills/review/SKILL.md");
+        assert!(is_extracted_bundled_skill("review", &review_path, home));
+
         for name in ["check", "best-of-n", "docx", "pptx", "xlsx"] {
             std::fs::create_dir_all(home.join(format!("skills/{name}"))).unwrap();
             std::fs::write(
@@ -334,39 +439,35 @@ mod tests {
             )
             .unwrap();
         }
+        std::fs::write(home.join(".metadata_version"), "0.0.0-stale").unwrap();
 
         extract_bundled_files(home);
 
-        for &(filename, _) in BUNDLED_FILES {
-            assert_ne!(
-                std::fs::read_to_string(home.join(filename)).unwrap(),
-                "old",
-                "{filename} was not re-extracted after version bump"
-            );
-        }
-        for &(name, _) in BUNDLED_SKILLS {
-            assert_ne!(
-                std::fs::read_to_string(home.join(format!("skills/{name}/SKILL.md"))).unwrap(),
-                "old",
-                "{name} skill was not re-extracted after version bump"
-            );
-        }
-        for &(relative_path, _) in BUNDLED_SKILL_SUPPORT_FILES {
-            assert_ne!(
-                std::fs::read(home.join("skills").join(relative_path)).unwrap(),
-                b"old",
-                "{relative_path} was not re-extracted after version bump"
-            );
-        }
-
-        // Legacy skill directories must have been removed (the key part of
-        // supporting renames like check → check-work without leaving orphans).
+        assert!(is_extracted_bundled_skill("review", &review_path, home));
         for name in ["check", "best-of-n", "docx", "pptx", "xlsx"] {
             assert!(
                 !home.join(format!("skills/{name}")).exists(),
-                "legacy '{name}' skill directory should have been deleted during version bump"
+                "legacy '{name}' skill directory should have been deleted"
             );
         }
+    }
+
+    #[test]
+    fn existing_custom_skill_does_not_receive_bundled_support_files() {
+        let tmp = tempfile::tempdir().unwrap();
+        let home = tmp.path();
+        let custom_pdf_dir = home.join("skills/pdf");
+        std::fs::create_dir_all(&custom_pdf_dir).unwrap();
+        std::fs::write(custom_pdf_dir.join("SKILL.md"), "custom pdf skill").unwrap();
+
+        extract_bundled_files(home);
+
+        assert_eq!(
+            std::fs::read_to_string(custom_pdf_dir.join("SKILL.md")).unwrap(),
+            "custom pdf skill"
+        );
+        assert!(!custom_pdf_dir.join("reference.md").exists());
+        assert!(!custom_pdf_dir.join("forms/f1040--2025.pdf").exists());
     }
 
     #[test]
@@ -469,12 +570,22 @@ mod tests {
         let review_content = std::fs::read_to_string(home.join("skills/review/SKILL.md")).unwrap();
         assert!(review_content.contains("../shared/personas/reviewer.toml"));
         assert!(!review_content.contains("../shared/personas/reviewer.md"));
+        assert!(review_content.contains("run_terminal_command"));
+        assert!(!review_content.contains("run_terminal_cmd`"));
+        assert!(review_content.contains("`background`: `false`"));
+        assert!(review_content.contains("`capability_mode`: `\"read-only\"`"));
+        assert!(review_content.contains("git worktree add --detach"));
 
         let design_content = std::fs::read_to_string(home.join("skills/design/SKILL.md")).unwrap();
         assert!(design_content.contains("../shared/personas/design-doc-writer.toml"));
         assert!(design_content.contains("../shared/personas/design-doc-reviewer.toml"));
         assert!(!design_content.contains("../shared/personas/design-doc-writer.md"));
         assert!(!design_content.contains("../shared/personas/design-doc-reviewer.md"));
+        assert!(design_content.contains("run_terminal_command"));
+        assert!(!design_content.contains("run_terminal_cmd`"));
+        assert!(design_content.contains("`background`: `false`"));
+        assert!(design_content.contains("`capability_mode`: `\"read-only\"`"));
+        assert!(design_content.contains("Cap automatic review/revision"));
 
         assert!(home.join("skills/shared/personas/reviewer.toml").is_file());
         assert!(

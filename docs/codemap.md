@@ -299,6 +299,12 @@ third_party 注释引用同步、旧品牌文件名一并 git mv。
 - [x] 修复 Grok Skill 中已经失配的 persona Markdown 路径，使释放后的副本读取实际
       内置的 TOML 文件。
 - [x] 用户指南与架构文档同步。
+- [x] PR #2 合并后审计修复：`review` / `design` 使用真实 `run_terminal_command` 名称、
+      foreground subagent 与 capability_mode；review branch/PR 读取目标 head detached worktree。
+- [x] Windows POSIX 流程统一要求 Git for Windows Bash，禁止把 bash block 直接交给 PowerShell/cmd。
+- [x] 新增 `.bundled_skill_manifest.json` SHA-256 受管文件跟踪：升级/修复仅覆盖未修改副本，
+      同名用户 Skill 与 support files 保留，inspect 分类与 manifest 联动。
+- [x] design 自动 review/revise 上限三轮，继续消耗 token 前必须由用户明确批准。
 
 **门禁**：
 1. `PROTOC=$PWD/.tools/protoc/bin/protoc cargo test -p weepcode-shell builtin::tests` 通过

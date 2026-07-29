@@ -51,35 +51,30 @@ The `<description>` is the design task -- it can be a feature design, system arc
 
 ## Setup
 
-Generate a unique ID for this run's artifact files. Execute this via `run_terminal_cmd` and capture the output:
+All command examples in this Skill use POSIX shell syntax. On Linux and macOS, execute them directly with `run_terminal_command`. On Windows, resolve Git for Windows Bash with `where.exe bash` and run every POSIX block through that executable with `-lc`. Do not send these blocks to PowerShell or `cmd.exe`; if Git Bash is unavailable, stop with a clear error.
+
+Create a private, unique scratch directory with `mktemp`; this works in Git Bash and avoids a Python dependency:
 
 ```bash
-python3 -c "import uuid; print(uuid.uuid4().hex[:8])" 2>/dev/null || cat /proc/sys/kernel/random/uuid 2>/dev/null | cut -c1-8 || echo "$(date +%s)" | tail -c 9
+umask 077
+scratch_dir=$(mktemp -d "${TMPDIR:-/tmp}/weepcode-design.XXXXXXXX")
+chmod 700 "$scratch_dir"
+printf '%s\n' "$scratch_dir"
 ```
 
-**Validate** that the command succeeded and produced a non-empty string. If `DESIGN_ID` is empty or the command failed, report the error to the user and stop -- do not proceed with empty/malformed file paths.
+Store the resolved absolute path as `scratch_dir`, derive `DESIGN_ID` from the final path component after `weepcode-design.`, and validate that both values are non-empty. Inline the absolute path into every later command and subagent prompt.
 
-Store the output as `DESIGN_ID`.
+Define these paths for the full loop:
 
-Then compute a **per-user, `$TMPDIR`-respecting scratch directory** for all artifact files. Never write skill artifacts directly under `/tmp` on a shared host: it leaks their contents to other users and ignores a user-configured `$TMPDIR`. Run via `run_terminal_cmd` and capture stdout:
+- `design_doc_file`: `${scratch_dir}/weepcode-design-doc-${DESIGN_ID}.md`
+- `summary_file`: `${scratch_dir}/weepcode-design-summary-${DESIGN_ID}.md`
+- `review_file`: `${scratch_dir}/weepcode-design-review-${DESIGN_ID}.md`
 
-```bash
-scratch_dir="${TMPDIR:-/tmp}/grok-$(id -u)"; mkdir -p "$scratch_dir" && chmod 700 "$scratch_dir" && echo "$scratch_dir"
-```
+Initialize:
 
-Store the output as `scratch_dir`. **Inline the resolved absolute path** into every file path below and into every subagent prompt; do not rely on a `$scratch_dir` shell variable surviving across separate `run_terminal_cmd` calls (the same reason these skills inline other resolved paths).
-
-Then define the shared file paths (all under `scratch_dir`) that will be threaded through every round:
-- `design_doc_file`: `${scratch_dir}/grok-design-doc-${DESIGN_ID}.md`
-- `summary_file`: `${scratch_dir}/grok-design-summary-${DESIGN_ID}.md`
-- `review_file`: `${scratch_dir}/grok-design-review-${DESIGN_ID}.md`
-
-These paths stay the same for the entire loop. Never regenerate them between iterations.
-
-Additionally, initialize these state variables for the orchestrator to maintain across rounds:
-- `round_count`: `0` — incremented each time a review completes (Step 2 and Step 5).
-- `total_issues_by_severity`: `{}` — a map from severity (e.g., critical, major, minor, nit) to cumulative count. After each review, add the count of open issues by severity to this accumulator.
-- `previous_review_snapshot`: `""` — after each review, before the writer revises, save a copy of the review_file contents (or at minimum, the list of issue descriptions and their statuses) so you can detect stalemates by comparing the current round's wontfix/re-opened issues against the prior round.
+- `round_count`: `0`.
+- `total_issues_by_severity`: `{}`.
+- `previous_review_snapshot`: `""`.
 
 ## Step 1: Write the Design Document
 
@@ -88,6 +83,8 @@ Launch the design-doc-writer subagent by calling `spawn_subagent`. Emit the `spa
 `spawn_subagent` parameters:
 - `subagent_type`: `"general-purpose"`
 - `description`: `"[writer] Write design doc: <short summary>"`
+- `background`: `false`
+- `capability_mode`: `"read-write"` — the writer may edit documents but cannot execute commands.
 
 **Prepend the writer persona instructions** (loaded during setup) to the prompt.
 
@@ -128,6 +125,8 @@ Launch the design-doc-reviewer subagent by calling `spawn_subagent`.
 `spawn_subagent` parameters:
 - `subagent_type`: `"general-purpose"`
 - `description`: `"[reviewer] Review design document"`
+- `background`: `false`
+- `capability_mode`: `"read-only"` — the reviewer returns findings and cannot edit files or execute commands.
 
 **Prepend the reviewer persona instructions** (loaded during setup) to the prompt.
 
@@ -144,7 +143,7 @@ The writer's summary is at: <summary_file>
 
 Read both files. Review the document thoroughly.
 
-Write your review notes to: <review_file>
+Return the complete review notes as your final response. Do not write files.
 Use the structured format with severity, section, description, suggestion, and status for each issue.
 Every issue must have a Status field set to "open".
 
@@ -157,7 +156,7 @@ Pay special attention to:
 
 Wait for the subagent to complete. If it fails, report the error to the user and stop.
 
-Save the returned `subagent_id` -- you will resume this agent for all re-review rounds.
+Write the completed reviewer response verbatim to `<review_file>` with the `write` tool. Save the returned `subagent_id` -- you will resume this agent for all re-review rounds.
 
 ## Step 3: Check Exit Condition
 
@@ -194,6 +193,8 @@ Resume the original design-doc-writer to address **all** review findings.
 - `subagent_type`: `"general-purpose"`
 - `resume_from`: `<writer_subagent_id>`
 - `description`: `"[writer] Revise design doc"`
+- `background`: `false`
+- `capability_mode`: `"read-write"`
 
 Prompt:
 ```
@@ -230,6 +231,8 @@ Resume the original reviewer to re-review the revisions.
 - `subagent_type`: `"general-purpose"`
 - `resume_from`: `<reviewer_subagent_id>`
 - `description`: `"[reviewer] Re-review design doc"`
+- `background`: `false`
+- `capability_mode`: `"read-only"`
 
 Prompt:
 ```
@@ -241,7 +244,7 @@ The writer's summary is at: <summary_file>
 
 Read all files. Review the document again thoroughly.
 
-Rewrite the review_file with your new findings:
+Return the complete replacement contents for the review_file as your final response:
 - If a previous issue was properly addressed, do not re-list it.
 - If a revision introduced a new problem, list it as a new issue with Status: open.
 - If any issue was not properly addressed, re-list it with Status: open.
@@ -250,7 +253,7 @@ Rewrite the review_file with your new findings:
 
 Wait for completion. If it fails, report the error to the user and stop.
 
-Update the saved reviewer `subagent_id` with the new one returned.
+Write the completed reviewer response verbatim to `<review_file>` with the `write` tool, replacing the previous contents. Update the saved reviewer `subagent_id` with the new one returned.
 
 **Go back to Step 3.** Repeat until 0 open issues.
 
@@ -279,7 +282,7 @@ Read and present the "PR Plan" section from the design document to the user.
 
 ## Exit Condition
 
-The **only** exit condition for the write-review loop is the reviewer reporting **0 issues** of any severity. There is no iteration cap. Every issue -- including nits and minor suggestions -- must be addressed before the loop terminates.
+The normal exit condition is the reviewer reporting **0 issues** of any severity. Cap automatic review/revision at **3 review rounds**. If issues remain after round 3, present them to the user and ask whether to run one additional round or stop with the current document; never continue spending tokens without explicit approval.
 
 ## Cleanup
 
@@ -323,7 +326,7 @@ Give the user a brief status update after each phase:
 - **Don't modify the design document yourself** -- all document changes go through the design-doc-writer persona subagent.
 - **Explicitly tell subagents to write their output files** -- include the file path and what to write in every prompt.
 - **Thread the same file paths** across all rounds -- never generate new paths between iterations.
-- **No iteration cap** -- the loop runs until 0 issues. Do not add a max rounds limit.
+- **Bound automatic spend** -- stop after 3 review rounds unless the user explicitly approves one additional round.
 - **Always include PR Plan and Key Decisions** -- these are mandatory sections in every design document produced by this skill.
 - **Ask the user about open questions** -- never silently resolve open questions; always present them to the user for decision (use the appropriate ask/question tool if available).
 - **Writer can push back** -- the writer is explicitly allowed (and encouraged) to set `Status: wontfix` with a technical justification. The reviewer may re-open it, but if they disagree twice, it's a stalemate that gets escalated to the user.
