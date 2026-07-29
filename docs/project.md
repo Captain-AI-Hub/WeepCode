@@ -79,6 +79,8 @@ Deep Research 是内置 workflow，运行在 shell 侧，pager 只负责显示�
 1. 用户执行 `/deep-research <query>`，或模型调用 `workflow` tool。
    shell 在 initialize metadata 中预广告 `/deep-research` 与 `/workflow`，pager 因而可在首个
    session 创建前提供 slash autocomplete；live session 后再由 `AvailableCommandsUpdate` 更新能力列表。
+   自定义编排可先调用内置 `/create-workflow` skill；该文件编译进单二进制，并由 shell 初始化流程
+   自动释放到 `~/.weepcode/skills/create-workflow/SKILL.md`。
 2. shell 的 `WorkflowRegistry` 解析内置脚本、项目 `.weepcode/workflows/` 和用户
    `~/.weepcode/workflows/` 中的 Rhai workflow。
 3. `WorkflowManager` 创建 `run_id`、session 内 display handle、journal 和 `WorkflowRunStore` 持久化记录。
@@ -92,6 +94,25 @@ Deep Research 是内置 workflow，运行在 shell 侧，pager 只负责显示�
 
 持久化位置在 session 目录下的 `workflows/<run_id>/`，核心文件包括 `state.json` 和 ack/tombstone 信息。
 恢复会话时，shell 读取 persisted workflow runs；pager 以 revision 去重并合并 live/restored 快照。
+
+## 4.2 内置 Skill 的打包与安装
+
+WeepCode 的产品内置 Skill 由 `weepcode-shell/src/builtin.rs` 管理：
+
+1. `SKILL.md` 使用 `include_str!`，二进制资源使用 `include_bytes!` 编译进唯一发布二进制。
+2. shell 初始化时，`extract_bundled_files` 把它们释放到 `~/.weepcode/skills/<name>/`。
+3. 版本变化时刷新全部受管文件；版本不变时只补写缺失的 `SKILL.md` 和嵌套资源。
+4. 当前自动释放：`help`、`create-skill`、`create-workflow`、`code-review`、`review`、
+   `design`、`pdf`、`imagine`、`check-work`。`best-of-n` 只编译供 headless 使用，不释放。
+
+`review`、`design`、`pdf` 直接来自本机 Grok 发行包。前两者的 persona TOML 作为共享
+support files 一同内置；`pdf` 的参考文档、脚本和二进制表单也完整进入单二进制。
+
+原版 Grok 还存在第二条动态 bundle 链路：认证后后台请求 `/v1/bundle/archive`，以一小时
+TTL 把扩展 persona、role、agent 和 skill 同步到 `~/.grok/bundled/`。该链路使用
+`manifest.json` 和 SHA-256 区分受管文件、用户修改与已下线文件。WeepCode 保留了兼容的
+bundle 解析代码，但独立 BYOK 安装没有 Grok 一方认证，因此产品内置能力不能依赖这条远端同步，
+而采用上述随二进制释放路径。
 
 ## 5. 推理栈（已实现多后端，改造的地基）
 

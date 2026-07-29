@@ -4,13 +4,26 @@ const BUNDLED_FILES: &[(&str, &str)] = &[("README.md", include_str!("../README.m
 
 const HELP_SKILL_MD: &str = include_str!("../skills/help/SKILL.md");
 const CREATE_SKILL_MD: &str = include_str!("../skills/create-skill/SKILL.md");
+const CREATE_WORKFLOW_SKILL_MD: &str = include_str!("../skills/create-workflow/SKILL.md");
 const CODE_REVIEW_SKILL_MD: &str = include_str!("../skills/code-review/SKILL.md");
+const REVIEW_SKILL_MD: &str = include_str!("../skills/review/SKILL.md");
+const DESIGN_SKILL_MD: &str = include_str!("../skills/design/SKILL.md");
+const PDF_SKILL_MD: &str = include_str!("../skills/pdf/SKILL.md");
 const IMAGINE_SKILL_MD: &str = include_str!("../skills/imagine/SKILL.md");
 /// Compiled-in SKILL.md content for `/check-work` (available to headless mode).
 pub const CHECK_SKILL_MD: &str = include_str!("../skills/check-work/SKILL.md");
 /// Compiled-in SKILL.md content for headless `--best-of-n` (not extracted as
 /// a bundled skill).
 pub const BEST_OF_N_SKILL_MD: &str = include_str!("../skills/best-of-n/SKILL.md");
+
+macro_rules! bundled_skill_support_file {
+    ($relative_path:literal) => {
+        (
+            $relative_path,
+            include_bytes!(concat!("../skills/", $relative_path)) as &[u8],
+        )
+    };
+}
 
 /// Legacy bundled skill names (renamed or removed).
 ///
@@ -55,9 +68,55 @@ const LEGACY_BUNDLED_SKILL_NAMES: &[&str] = &["check", "best-of-n", "docx", "ppt
 const BUNDLED_SKILLS: &[(&str, &str)] = &[
     ("help", HELP_SKILL_MD),
     ("create-skill", CREATE_SKILL_MD),
+    ("create-workflow", CREATE_WORKFLOW_SKILL_MD),
     ("code-review", CODE_REVIEW_SKILL_MD),
+    ("review", REVIEW_SKILL_MD),
+    ("design", DESIGN_SKILL_MD),
+    ("pdf", PDF_SKILL_MD),
     ("imagine", IMAGINE_SKILL_MD),
     ("check-work", CHECK_SKILL_MD),
+];
+
+/// Nested files required by bundled skills.
+///
+/// Paths are relative to `<weepcode_home>/skills/`. Unlike `SKILL.md`, these
+/// resources can be binary (the PDF skill ships official form templates), so
+/// they are embedded with `include_bytes!`.
+const BUNDLED_SKILL_SUPPORT_FILES: &[(&str, &[u8])] = &[
+    bundled_skill_support_file!("shared/personas/reviewer.toml"),
+    bundled_skill_support_file!("shared/personas/design-doc-writer.toml"),
+    bundled_skill_support_file!("shared/personas/design-doc-reviewer.toml"),
+    bundled_skill_support_file!("pdf/forms.md"),
+    bundled_skill_support_file!("pdf/reference.md"),
+    bundled_skill_support_file!("pdf/tax.md"),
+    bundled_skill_support_file!("pdf/scripts/check_bounding_boxes.py"),
+    bundled_skill_support_file!("pdf/scripts/check_fillable_fields.py"),
+    bundled_skill_support_file!("pdf/scripts/convert_pdf_to_images.py"),
+    bundled_skill_support_file!("pdf/scripts/create_validation_image.py"),
+    bundled_skill_support_file!("pdf/scripts/extract_form_field_info.py"),
+    bundled_skill_support_file!("pdf/scripts/extract_form_structure.py"),
+    bundled_skill_support_file!("pdf/scripts/fill_fillable_fields.py"),
+    bundled_skill_support_file!("pdf/scripts/fill_pdf_form_with_annotations.py"),
+    bundled_skill_support_file!("pdf/forms/f1040--2025.pdf"),
+    bundled_skill_support_file!("pdf/forms/f1040s1--2025.pdf"),
+    bundled_skill_support_file!("pdf/forms/f1040s2--2025.pdf"),
+    bundled_skill_support_file!("pdf/forms/f1040s3--2025.pdf"),
+    bundled_skill_support_file!("pdf/forms/f1040s8--2025.pdf"),
+    bundled_skill_support_file!("pdf/forms/f1040sa--2025.pdf"),
+    bundled_skill_support_file!("pdf/forms/f1040sb--2025.pdf"),
+    bundled_skill_support_file!("pdf/forms/f1040sc--2025.pdf"),
+    bundled_skill_support_file!("pdf/forms/f1040sd--2025.pdf"),
+    bundled_skill_support_file!("pdf/forms/f1040se--2025.pdf"),
+    bundled_skill_support_file!("pdf/forms/f1040sse--2025.pdf"),
+    bundled_skill_support_file!("pdf/forms/f2441--2025.pdf"),
+    bundled_skill_support_file!("pdf/forms/f5329--2025.pdf"),
+    bundled_skill_support_file!("pdf/forms/f8812--2025.pdf"),
+    bundled_skill_support_file!("pdf/forms/f8889--2025.pdf"),
+    bundled_skill_support_file!("pdf/forms/f8936--2025.pdf"),
+    bundled_skill_support_file!("pdf/forms/f8949--2025.pdf"),
+    bundled_skill_support_file!("pdf/forms/f8959--2025.pdf"),
+    bundled_skill_support_file!("pdf/forms/f8960--2025.pdf"),
+    bundled_skill_support_file!("pdf/forms/f8995--2025.pdf"),
 ];
 
 /// True when a discovered skill is the copy `extract_bundled_files` wrote to
@@ -83,6 +142,28 @@ fn resolve_skill_content(name: &str, raw: &str, weepcode_home: &std::path::Path)
             let weepcode_home_str = format!("{}/", weepcode_home.to_string_lossy());
             raw.replace("~/.weepcode/", &weepcode_home_str)
         }
+        // Keep the bundled source byte-for-byte aligned with the Grok release
+        // artifact; only adapt product names and workflow paths on extraction.
+        "create-workflow" => raw
+            .replace("Grok Build", "WeepCode")
+            .replace(".grok/", ".weepcode/"),
+        // The Grok archive stores personas as TOML in its bundled persona
+        // catalog, while these two skills still reference the older Markdown
+        // support-file layout. Keep the vendored skill source unchanged and
+        // point the extracted copy at the byte-identical TOML resources.
+        "review" => raw.replace(
+            "../shared/personas/reviewer.md",
+            "../shared/personas/reviewer.toml",
+        ),
+        "design" => raw
+            .replace(
+                "../shared/personas/design-doc-writer.md",
+                "../shared/personas/design-doc-writer.toml",
+            )
+            .replace(
+                "../shared/personas/design-doc-reviewer.md",
+                "../shared/personas/design-doc-reviewer.toml",
+            ),
         _ => raw.to_string(),
     }
 }
@@ -138,6 +219,7 @@ pub fn extract_bundled_files(weepcode_home: &std::path::Path) {
             tracing::debug!(error = %e, name, "Failed to write skill");
         }
     }
+    extract_skill_support_files(weepcode_home, false);
 
     let _ = std::fs::write(&marker, version);
     tracing::debug!(version, "Extracted bundled files");
@@ -154,6 +236,32 @@ fn extract_missing_skills(weepcode_home: &std::path::Path) {
         let _ = std::fs::create_dir_all(skill_md.parent().unwrap());
         let content = resolve_skill_content(name, raw, weepcode_home);
         let _ = std::fs::write(&skill_md, content);
+    }
+    extract_skill_support_files(weepcode_home, true);
+}
+
+/// Extract nested skill resources.
+///
+/// On a version bump all managed resources are refreshed. The same-version
+/// fast path writes only missing files, matching the repair behavior for
+/// top-level `SKILL.md` files.
+fn extract_skill_support_files(weepcode_home: &std::path::Path, only_missing: bool) {
+    let skills_dir = weepcode_home.join("skills");
+    for &(relative_path, content) in BUNDLED_SKILL_SUPPORT_FILES {
+        let destination = skills_dir.join(relative_path);
+        if only_missing && destination.exists() {
+            continue;
+        }
+        if let Some(parent) = destination.parent() {
+            let _ = std::fs::create_dir_all(parent);
+        }
+        if let Err(error) = std::fs::write(&destination, content) {
+            tracing::debug!(
+                error = %error,
+                path = %relative_path,
+                "Failed to write bundled skill support file"
+            );
+        }
     }
 }
 
@@ -209,9 +317,11 @@ mod tests {
         for &(filename, _) in BUNDLED_FILES {
             std::fs::write(home.join(filename), "old").unwrap();
         }
-        std::fs::write(home.join("skills/help/SKILL.md"), "old").unwrap();
-        for name in ["check-work", "imagine", "code-review"] {
+        for &(name, _) in BUNDLED_SKILLS {
             std::fs::write(home.join(format!("skills/{name}/SKILL.md")), "old").unwrap();
+        }
+        for &(relative_path, _) in BUNDLED_SKILL_SUPPORT_FILES {
+            std::fs::write(home.join("skills").join(relative_path), "old").unwrap();
         }
         std::fs::write(home.join(".metadata_version"), "0.0.0-stale").unwrap();
 
@@ -234,15 +344,18 @@ mod tests {
                 "{filename} was not re-extracted after version bump"
             );
         }
-        assert_ne!(
-            std::fs::read_to_string(home.join("skills/help/SKILL.md")).unwrap(),
-            "old"
-        );
-        for name in ["check-work", "imagine", "code-review"] {
+        for &(name, _) in BUNDLED_SKILLS {
             assert_ne!(
                 std::fs::read_to_string(home.join(format!("skills/{name}/SKILL.md"))).unwrap(),
                 "old",
                 "{name} skill was not re-extracted after version bump"
+            );
+        }
+        for &(relative_path, _) in BUNDLED_SKILL_SUPPORT_FILES {
+            assert_ne!(
+                std::fs::read(home.join("skills").join(relative_path)).unwrap(),
+                b"old",
+                "{relative_path} was not re-extracted after version bump"
             );
         }
 
@@ -303,6 +416,140 @@ mod tests {
         let help = help.unwrap();
         assert!(help.description.contains("configuration"));
         assert!(help.user_invocable);
+    }
+
+    #[tokio::test]
+    async fn create_workflow_skill_is_extracted_and_discovered() {
+        let tmp = tempfile::tempdir().unwrap();
+        let home = tmp.path();
+
+        extract_bundled_files(home);
+
+        let extracted_skill = home.join("skills/create-workflow/SKILL.md");
+        let extracted_content = std::fs::read_to_string(&extracted_skill).unwrap();
+        assert!(extracted_content.contains("Create a WeepCode workflow"));
+        assert!(extracted_content.contains("~/.weepcode/workflows/"));
+        assert!(!extracted_content.contains("Grok Build"));
+        assert!(!extracted_content.contains(".grok/"));
+
+        let workspace = tmp.path().join("workspace");
+        let project_skill_dir = workspace.join(".weepcode/skills/create-workflow");
+        std::fs::create_dir_all(&project_skill_dir).unwrap();
+        std::fs::copy(extracted_skill, project_skill_dir.join("SKILL.md")).unwrap();
+
+        let skills = weepcode_agent::prompt::skills::list_skills(
+            Some(workspace.to_str().unwrap()),
+            &Default::default(),
+            weepcode_agent::prompt::skills::CompatConfig::default(),
+        )
+        .await;
+
+        let create_workflow = skills.iter().find(|skill| skill.name == "create-workflow");
+        assert!(
+            create_workflow.is_some(),
+            "create-workflow skill not found. skills: {:?}",
+            skills.iter().map(|skill| &skill.name).collect::<Vec<_>>()
+        );
+        let create_workflow = create_workflow.unwrap();
+        assert!(
+            create_workflow
+                .description
+                .contains("Rhai orchestration script")
+        );
+        assert!(create_workflow.user_invocable);
+    }
+
+    #[tokio::test]
+    async fn review_design_and_pdf_skills_are_extracted_with_support_files() {
+        let tmp = tempfile::tempdir().unwrap();
+        let home = tmp.path();
+
+        extract_bundled_files(home);
+
+        let review_content = std::fs::read_to_string(home.join("skills/review/SKILL.md")).unwrap();
+        assert!(review_content.contains("../shared/personas/reviewer.toml"));
+        assert!(!review_content.contains("../shared/personas/reviewer.md"));
+
+        let design_content = std::fs::read_to_string(home.join("skills/design/SKILL.md")).unwrap();
+        assert!(design_content.contains("../shared/personas/design-doc-writer.toml"));
+        assert!(design_content.contains("../shared/personas/design-doc-reviewer.toml"));
+        assert!(!design_content.contains("../shared/personas/design-doc-writer.md"));
+        assert!(!design_content.contains("../shared/personas/design-doc-reviewer.md"));
+
+        assert!(home.join("skills/shared/personas/reviewer.toml").is_file());
+        assert!(
+            home.join("skills/shared/personas/design-doc-writer.toml")
+                .is_file()
+        );
+        assert!(
+            home.join("skills/shared/personas/design-doc-reviewer.toml")
+                .is_file()
+        );
+        assert!(home.join("skills/pdf/reference.md").is_file());
+        assert!(
+            home.join("skills/pdf/scripts/convert_pdf_to_images.py")
+                .is_file()
+        );
+        assert!(
+            std::fs::read(home.join("skills/pdf/forms/f1040--2025.pdf"))
+                .unwrap()
+                .starts_with(b"%PDF")
+        );
+
+        let workspace = tmp.path().join("workspace");
+        for skill_name in ["review", "design", "pdf"] {
+            let project_skill_dir = workspace.join(".weepcode/skills").join(skill_name);
+            std::fs::create_dir_all(&project_skill_dir).unwrap();
+            std::fs::copy(
+                home.join("skills").join(skill_name).join("SKILL.md"),
+                project_skill_dir.join("SKILL.md"),
+            )
+            .unwrap();
+        }
+
+        let skills = weepcode_agent::prompt::skills::list_skills(
+            Some(workspace.to_str().unwrap()),
+            &Default::default(),
+            weepcode_agent::prompt::skills::CompatConfig::default(),
+        )
+        .await;
+
+        for skill_name in ["review", "design", "pdf"] {
+            let skill = skills.iter().find(|skill| skill.name == skill_name);
+            assert!(
+                skill.is_some(),
+                "{skill_name} skill not found. skills: {:?}",
+                skills.iter().map(|skill| &skill.name).collect::<Vec<_>>()
+            );
+            assert!(skill.unwrap().user_invocable);
+        }
+    }
+
+    #[test]
+    fn same_version_repairs_missing_skill_support_files() {
+        let tmp = tempfile::tempdir().unwrap();
+        let home = tmp.path();
+
+        extract_bundled_files(home);
+
+        let missing_paths = [
+            "skills/shared/personas/reviewer.toml",
+            "skills/pdf/reference.md",
+            "skills/pdf/forms/f1040--2025.pdf",
+        ];
+        for relative_path in missing_paths {
+            std::fs::remove_file(home.join(relative_path)).unwrap();
+        }
+        std::fs::write(home.join(".metadata_version"), weepcode_version::VERSION).unwrap();
+
+        extract_bundled_files(home);
+
+        for relative_path in missing_paths {
+            assert!(
+                home.join(relative_path).is_file(),
+                "{relative_path} should be repaired on same-version startup"
+            );
+        }
     }
 
     // ---------------------------------------------------------------------

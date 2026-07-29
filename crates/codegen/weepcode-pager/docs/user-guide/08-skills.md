@@ -199,7 +199,9 @@ The `--json` report includes the full detail for each skill: its `name`, `descri
 
 ## Bundled and Plugin Skills
 
-WeepCode ships with built-in skills and extracts them to `~/.weepcode/skills/` on startup -- among them `/create-skill`, `/help`, and `/check-work`. Bundled skills behave like user skills, and a same-named skill in a higher-priority location (local or repo) overrides the bundled copy; `weepcode inspect` labels the extracted copies `bundled` so they stay distinguishable from skills you authored yourself. (A plugin skill of the same name does not override it; it stays available under its qualified `plugin:name` form.)
+WeepCode ships with built-in skills and extracts them to `~/.weepcode/skills/` on startup. The built-in catalog includes `/help`, `/create-skill`, `/create-workflow`, `/code-review`, `/review`, `/design`, `/pdf`, `/imagine`, and `/check-work`. `/create-workflow` authors and path-smoke-checks Rhai workflow scripts before saving them under the project or user workflow directory. `/review` runs a read-only reviewer against local changes, branches, or GitHub pull requests; `/design` runs a writer/reviewer design-document loop; `/pdf` includes its reference documents, helper scripts, and form assets rather than only a `SKILL.md` file.
+
+The complete built-in payload is compiled into the WeepCode binary. A version upgrade refreshes the managed copies, while a same-version startup repairs any missing `SKILL.md` or nested support file. Bundled skills otherwise behave like user skills, and a same-named skill in a higher-priority location (local or repo) overrides the bundled copy; `weepcode inspect` labels the extracted copies `bundled` so they stay distinguishable from skills you authored yourself. (A plugin skill of the same name does not override it; it stays available under its qualified `plugin:name` form.)
 
 Skills can also come from plugins. When you install a plugin that includes skills, they appear alongside your user and project skills. `weepcode inspect` labels each plugin-provided skill with its source as `plugin: <name>`.
 
