@@ -62,43 +62,43 @@ If the user passes both a flag and a positional argument (e.g., `/review --local
 
 ## Setup
 
-Generate a unique ID for this run's artifact files. Execute this via `run_terminal_cmd` and capture stdout:
+### Shell portability contract
 
-```bash
-python3 -c "import uuid; print(uuid.uuid4().hex[:8])"
-```
+All command examples below use POSIX shell syntax. On Linux and macOS, execute them directly with `run_terminal_command`. On Windows:
 
-This matches the pattern used by `implement/SKILL.md`. The previous draft of this skill chained two fallbacks (`/proc/sys/kernel/random/uuid` and `date +%s`), but the `/proc` path is missing on macOS and the `date` fallback's `tail -c 9` kept a trailing newline -- both bugs. `python3` is reliably present in the supported environments; if it is genuinely absent, the validation step below catches it with a clear error.
+1. Do **not** send these blocks to PowerShell or `cmd.exe`.
+2. Resolve Git for Windows Bash with `where.exe bash`. If that fails, check the Git installation reported by `where.exe git` and locate the sibling `bin\bash.exe`.
+3. Execute every POSIX block through that Bash executable with `-lc` and keep using the same launcher for the whole run.
+4. If Git Bash is unavailable, stop with a clear message instead of attempting partially translated PowerShell commands.
 
-**Validate** that the command produced a non-empty 8-character string. If `REVIEW_ID` is empty or the command failed, report the error to the user (with the suggestion to install Python 3) and stop -- do not proceed with empty/malformed file paths.
+This Skill reviews Git state, so requiring the Bash shipped with Git for Windows does not add a dependency beyond the Git installation already needed by branch and local modes.
 
-Store the output as `REVIEW_ID`. Set a restrictive umask first so all subsequent artifact writes land at mode 0600 -- the diff and review files can capture `.env` snippets or other secrets and the default 0644 leaks them to other users on shared hosts:
+Create a private, unique scratch directory with the shell's `mktemp`; this avoids a Python dependency and works in Git Bash:
 
 ```bash
 umask 077
+scratch_dir=$(mktemp -d "${TMPDIR:-/tmp}/weepcode-review.XXXXXXXX")
+chmod 700 "$scratch_dir"
+printf '%s\n' "$scratch_dir"
 ```
 
-Also compute a **per-user, `$TMPDIR`-respecting scratch directory** so artifacts never land directly in shared `/tmp`. The `umask` protects file *contents*, but a shared `/tmp` still ignores a user-configured `$TMPDIR` and leaves world-listable filenames plus stray files owned by the first user on a shared host. Run via `run_terminal_cmd` and capture stdout:
+Store the absolute output as `scratch_dir` and derive `REVIEW_ID` from the final path component after `weepcode-review.`. Validate that both values are non-empty. **Inline the resolved absolute path** into every later command and subagent prompt; shell variables do not survive across separate tool calls.
 
-```bash
-scratch_dir="${TMPDIR:-/tmp}/grok-$(id -u)"; mkdir -p "$scratch_dir" && chmod 700 "$scratch_dir" && echo "$scratch_dir"
-```
+Define these paths:
 
-Store the output as `scratch_dir`. **Inline the resolved absolute path** into every file path below and into every subagent prompt; do not rely on a `$scratch_dir` shell variable surviving across separate `run_terminal_cmd` calls.
-
-Then define the file paths used throughout the run:
-
-- `summary_file`: `${scratch_dir}/grok-review-summary-${REVIEW_ID}.md` (orchestrator-written; used in local and branch modes only -- not written or read in PR mode)
-- `review_file`: `${scratch_dir}/grok-review-${REVIEW_ID}.md` (reviewer subagent writes here; produced in all modes)
-- `diff_file`: `${scratch_dir}/grok-review-diff-${REVIEW_ID}.diff` (collected diff fed to the reviewer; produced in all modes)
-- `pending_review_payload`: `${scratch_dir}/grok-review-pending-${REVIEW_ID}.json` (PR mode only -- not written or read in local/branch modes, so cleanup of this path is a no-op outside PR mode)
+- `summary_file`: `${scratch_dir}/weepcode-review-summary-${REVIEW_ID}.md`
+- `review_file`: `${scratch_dir}/weepcode-review-${REVIEW_ID}.md`
+- `diff_file`: `${scratch_dir}/weepcode-review-diff-${REVIEW_ID}.diff`
+- `pending_review_payload`: `${scratch_dir}/weepcode-review-pending-${REVIEW_ID}.json`
+- `review_checkout`: empty in local mode; branch and PR modes set it to `${scratch_dir}/weepcode-review-checkout-${REVIEW_ID}`.
 
 Initialize state variables:
 
-- `mode`: one of `local`, `branch`, `pr` (set by argument parsing).
-- `target`: the branch name, PR number, or PR URL (empty in local mode).
-- `head_sha`, `base_sha`, `owner`, `repo`, `pr_number`, `pr_url`, `pr_title` (populated in PR mode by Step 1).
-- `changed_files`: list of file paths in the diff (populated by Step 1).
+- `mode`: one of `local`, `branch`, `pr`.
+- `target`: branch name, PR number, or PR URL.
+- `review_cwd`: the current workspace in local mode; set to `review_checkout` in branch and PR modes.
+- `head_sha`, `base_sha`, `owner`, `repo`, `pr_number`, `pr_url`, `pr_title` as populated by PR metadata.
+- `changed_files`: paths present in the collected diff.
 
 ## Step 1: Resolve target & collect diff
 
@@ -160,14 +160,14 @@ The diff collection commands differ per mode.
            git -c core.quotepath=false diff --name-only HEAD
        fi
        git ls-files --others --exclude-standard
-   } | sort -u > ${scratch_dir}/grok-review-files-${REVIEW_ID}.txt
+   } | sort -u > ${scratch_dir}/weepcode-review-files-${REVIEW_ID}.txt
    ```
 
    Read this into `changed_files`.
 
 ### Branch mode
 
-1. Determine the base branch. Try in order:
+1. Determine the base branch. Prefer `origin/main`, then `origin/master`; if neither exists, ask the user for a base ref.
 
    ```bash
    if git rev-parse --verify --quiet origin/main >/dev/null; then
@@ -179,29 +179,36 @@ The diff collection commands differ per mode.
    fi
    ```
 
-   Use an explicit `if/elif/else` (not two unconditional `&&` lines) so that `origin/master` does not overwrite `origin/main` when both exist (which happens during master-to-main migrations and on mirror repos). The `>/dev/null` redirect prevents the SHA emitted by `git rev-parse` from leaking into the orchestrator's captured output.
-
-   If `BASE` is empty (neither ref exists), ask the user which base ref to compare against (use the appropriate ask/question tool if available) (offer the local default branch name(s) you can detect via `git symbolic-ref refs/remotes/origin/HEAD`, plus an "Other" option).
-
-2. Verify the target branch exists:
+2. Resolve the target to the exact local or remote ref that exists:
 
    ```bash
-   git rev-parse --verify --quiet "${target}" || git rev-parse --verify --quiet "origin/${target}"
+   if git rev-parse --verify --quiet "${target}" >/dev/null; then
+       TARGET_REF="${target}"
+   elif git rev-parse --verify --quiet "origin/${target}" >/dev/null; then
+       TARGET_REF="origin/${target}"
+   else
+       printf 'Target branch not found: %s\n' "${target}" >&2
+       exit 1
+   fi
    ```
 
-   If neither resolves, report the error and stop.
-
-3. Compute the merge base and collect the diff (`core.quotepath=false` prevents C-style path quoting so the parser in Step 3 PR mode sees literal paths -- `gh pr diff` does not quote paths, so PR mode is unaffected):
+3. Compute the merge base and collect the diff from `TARGET_REF`:
 
    ```bash
-   MERGE_BASE=$(git merge-base "${BASE}" "${target}")
-   git -c core.quotepath=false diff "${MERGE_BASE}".."${target}" > "${diff_file}"
-   git -c core.quotepath=false diff --name-only "${MERGE_BASE}".."${target}" > ${scratch_dir}/grok-review-files-${REVIEW_ID}.txt
+   MERGE_BASE=$(git merge-base "${BASE}" "${TARGET_REF}")
+   git -c core.quotepath=false diff "${MERGE_BASE}".."${TARGET_REF}" > "${diff_file}"
+   git -c core.quotepath=false diff --name-only "${MERGE_BASE}".."${TARGET_REF}" > ${scratch_dir}/weepcode-review-files-${REVIEW_ID}.txt
    ```
 
-4. **Empty-diff handling**: if `${diff_file}` is empty (or contains only whitespace), print "Branch `${target}` has no changes vs `${BASE}`." Skip directly to Step 4 (Cleanup -- use the local/branch sub-case) and then Step 5 (Final report). The Final report should use the "Local / branch (empty-diff exit)" bullet to note that the branch has no changes vs its base. Do NOT launch the reviewer.
+4. If the diff is empty, report that the branch has no changes and skip the reviewer.
 
-   Read `changed_files` from the names file.
+5. Materialize the exact target tree in a detached temporary worktree:
+
+   ```bash
+   git worktree add --detach "${review_checkout}" "${TARGET_REF}"
+   ```
+
+   Set `review_cwd` to the absolute `review_checkout` path, then read `changed_files` from the names file. The reviewer must read contextual source from this checkout, never from the caller's current branch.
 
 ### PR mode
 
@@ -217,7 +224,7 @@ The diff collection commands differ per mode.
 
    ```bash
    gh pr view "${target}" --json number,title,body,headRefOid,baseRefOid,headRefName,baseRefName,url,headRepository,headRepositoryOwner,isCrossRepository,files \
-       > ${scratch_dir}/grok-review-prmeta-${REVIEW_ID}.json
+       > ${scratch_dir}/weepcode-review-prmeta-${REVIEW_ID}.json
    ```
 
    Parse the JSON and populate:
@@ -227,7 +234,7 @@ The diff collection commands differ per mode.
    - `head_sha` from `.headRefOid`
    - `base_sha` from `.baseRefOid`
    - `owner`, `repo` -- parse from `pr_url` using the regex `^https?://github\.com/(?P<owner>[^/]+)/(?P<repo>[^/]+)/pull/\d+`. The URL always points at the upstream where the PR lives, even for cross-repo PRs (`isCrossRepository: true`), so this is the correct source for the review-posting endpoint.
-   - `changed_files` -- extract via `jq -r '.files[].path' ${scratch_dir}/grok-review-prmeta-${REVIEW_ID}.json > ${scratch_dir}/grok-review-files-${REVIEW_ID}.txt`, then read the file.
+   - `changed_files` -- extract via `jq -r '.files[].path' ${scratch_dir}/weepcode-review-prmeta-${REVIEW_ID}.json > ${scratch_dir}/weepcode-review-files-${REVIEW_ID}.txt`, then read the file.
 
    **Validate** that all required fields are non-empty: `pr_number`, `head_sha`, `base_sha`, `owner`, `repo`. If any is missing or empty (which can happen for very old PRs, PRs in unusual states, or partial responses), surface the parsed JSON to the user and stop -- do not proceed to build a payload with `null` fields.
 
@@ -239,6 +246,15 @@ The diff collection commands differ per mode.
 
 4. **Empty-diff handling**: if `${diff_file}` is empty, print "PR #${pr_number} has no changes." Skip directly to Step 4 (Cleanup -- use the "PR mode, no reviewer output" sub-case, which removes `<diff_file>`, the prmeta JSON, the files list, and is a no-op on `<review_file>` / `<pending_review_payload>` because neither was written) and then Step 5 (Final report). The Final report should use the "PR (empty-diff exit)" bullet to note that the PR has no changes. Do NOT launch the reviewer.
 
+5. Fetch the exact PR head into a detached temporary worktree. GitHub exposes this ref on the base repository, including for cross-repository PRs:
+
+   ```bash
+   git fetch "https://github.com/${owner}/${repo}.git" "refs/pull/${pr_number}/head"
+   git worktree add --detach "${review_checkout}" FETCH_HEAD
+   ```
+
+   Set `review_cwd` to the absolute `review_checkout` path. The reviewer must use this checkout for all contextual source reads.
+
 After Step 1, report progress: "Collected diff for <mode> target <summary>. Launching reviewer..."
 
 ## Step 2: Launch reviewer subagent
@@ -248,7 +264,10 @@ Launch a single reviewer subagent by calling `spawn_subagent`. Emit the `spawn_s
 `spawn_subagent` parameters:
 
 - `subagent_type`: `"general-purpose"`
-- `description`: `"[reviewer] <mode> <target-summary>"` (e.g., `"[reviewer] pr #4221"` or `"[reviewer] branch feature/foo"` or `"[reviewer] local changes"`). The `[reviewer]` prefix is parsed by the pager's subagent label renderer (see `format_subagent_label` in `xai-grok-pager`) so the subagent row shows "Reviewer" instead of the generic "General" fallback. The bracketed prefix is stripped from the displayed description.
+- `description`: `"[reviewer] <mode> <target-summary>"`
+- `background`: `false` — this sequential flow must receive the completed review before parsing it.
+- `capability_mode`: `"read-only"` — enforce the no-edit/no-shell boundary at the tool layer.
+- `cwd`: `<review_cwd>` — current workspace for local mode; detached target worktree for branch and PR modes.
 
 Build the prompt with the mode-specific context. **Prepend the reviewer persona instructions** (loaded during setup) to the prompt. Use this template:
 
@@ -265,13 +284,13 @@ Target: <target-summary-line>
 <if branch mode: base: <BASE>, merge-base: <MERGE_BASE>, head: <target>>
 
 The unified diff is at: <diff_file>
-The list of changed files is at: ${scratch_dir}/grok-review-files-${REVIEW_ID}.txt
+The list of changed files is at: ${scratch_dir}/weepcode-review-files-${REVIEW_ID}.txt
 
 Read the diff first to understand the scope. The diff alone is often not enough
 context, so you should also `read_file` the source files referenced in the diff
 to understand call sites, types, and surrounding logic before flagging issues.
 
-Write your structured findings to: <review_file>
+Return your structured findings as your final response. Do not write files.
 
 Format:
 
@@ -311,11 +330,9 @@ empty `## Issues` section (or omit the Issues section entirely). Do not invent
 issues to fill space.
 ```
 
-Wait for the subagent to complete. If it fails, report the error to the user and stop.
+Wait for the subagent to complete. If it fails, remove any detached review worktree, report the error to the user, and stop.
 
-After it completes, verify that `<review_file>` exists and is non-empty. If it does not, report the error and stop.
-
-Save the returned `subagent_id` for the report. The reviewer is not resumed; this is a one-shot review.
+Write the completed subagent response verbatim to `<review_file>` with the `write` tool, then verify that the file is non-empty. Save the returned `subagent_id` for the report. The reviewer is not resumed; this is a one-shot review.
 
 Report progress: "Review complete. Processing findings..."
 
@@ -333,7 +350,7 @@ The post-processing differs between local/branch mode (write summary to disk) an
    git diff --shortstat ...     # local: HEAD; branch: MERGE_BASE..target
    ```
 
-   For local mode, run `git diff --shortstat HEAD` and also count untracked files separately. For branch mode, run `git diff --shortstat "${MERGE_BASE}".."${target}"`.
+   For local mode, run `git diff --shortstat HEAD` and also count untracked files separately. For branch mode, run `git diff --shortstat "${MERGE_BASE}".."${TARGET_REF}"`.
 
 4. Use the `write` tool to create `<summary_file>` with this structure:
 
@@ -463,7 +480,7 @@ Do NOT delete `<review_file>` or `<summary_file>` in local/branch modes -- those
    gh api "repos/${owner}/${repo}/pulls/${pr_number}/reviews" \
        -X POST \
        --input "${pending_review_payload}" \
-       > ${scratch_dir}/grok-review-post-${REVIEW_ID}.json 2> ${scratch_dir}/grok-review-post-${REVIEW_ID}.err
+       > ${scratch_dir}/weepcode-review-post-${REVIEW_ID}.json 2> ${scratch_dir}/weepcode-review-post-${REVIEW_ID}.err
    ```
 
    Capture both stdout and stderr.
@@ -497,12 +514,20 @@ Do NOT delete `<review_file>` or `<summary_file>` in local/branch modes -- those
 
 ## Step 4: Cleanup
 
+For branch and PR modes, remove the detached review checkout before cleaning artifacts:
+
+```bash
+if [ -n "${review_checkout}" ] && [ -d "${review_checkout}" ]; then
+    git worktree remove --force "${review_checkout}"
+fi
+```
+
 The cleanup behavior is **asymmetric** by mode and by outcome:
 
-- **Local and branch modes**: keep `<review_file>` and `<summary_file>` -- they are the deliverable. Remove only `<diff_file>` and the `${scratch_dir}/grok-review-files-${REVIEW_ID}.txt` helper file.
-- **PR mode, successful post**: remove `<review_file>`, `<diff_file>`, `<pending_review_payload>`, `${scratch_dir}/grok-review-prmeta-${REVIEW_ID}.json`, `${scratch_dir}/grok-review-files-${REVIEW_ID}.txt`, and the post stdout/stderr capture files. The pending review on GitHub is the deliverable; the local files are no longer needed. `<summary_file>` was never written in PR mode, so no action there.
+- **Local and branch modes**: keep `<review_file>` and `<summary_file>` -- they are the deliverable. Remove only `<diff_file>` and the `${scratch_dir}/weepcode-review-files-${REVIEW_ID}.txt` helper file.
+- **PR mode, successful post**: remove `<review_file>`, `<diff_file>`, `<pending_review_payload>`, `${scratch_dir}/weepcode-review-prmeta-${REVIEW_ID}.json`, `${scratch_dir}/weepcode-review-files-${REVIEW_ID}.txt`, and the post stdout/stderr capture files. The pending review on GitHub is the deliverable; the local files are no longer needed. `<summary_file>` was never written in PR mode, so no action there.
 - **PR mode, failed post (any non-zero `gh api` exit)**: keep `<review_file>` so the user can see what would have been posted and submit it through some other channel. Remove the rest as in the success path. The Final report must mention the preserved path.
-- **PR mode, no reviewer output (covers both zero-issue early-exit AND PR-with-empty-diff exit)**: remove all of `<diff_file>`, `<pending_review_payload>` (never created -- `rm -f` is a no-op), `${scratch_dir}/grok-review-prmeta-${REVIEW_ID}.json`, `${scratch_dir}/grok-review-files-${REVIEW_ID}.txt`, and `<review_file>` (which is a no-op in the empty-diff case where the reviewer never ran, and removes the empty-of-actionable-content file in the zero-issue case). This sub-case is the catch-all for any PR-mode exit that did not POST to GitHub.
+- **PR mode, no reviewer output (covers both zero-issue early-exit AND PR-with-empty-diff exit)**: remove all of `<diff_file>`, `<pending_review_payload>` (never created -- `rm -f` is a no-op), `${scratch_dir}/weepcode-review-prmeta-${REVIEW_ID}.json`, `${scratch_dir}/weepcode-review-files-${REVIEW_ID}.txt`, and `<review_file>` (which is a no-op in the empty-diff case where the reviewer never ran, and removes the empty-of-actionable-content file in the zero-issue case). This sub-case is the catch-all for any PR-mode exit that did not POST to GitHub.
 
 Cleanup commands:
 
@@ -510,26 +535,26 @@ Cleanup commands:
 # Local / branch mode (always -- covers both successful-review and empty-diff-exit cases;
 # the empty-diff exit happens before <diff_file> contains anything useful, but rm -f is a no-op
 # on a non-existent or already-empty file)
-rm -f "${diff_file}" ${scratch_dir}/grok-review-files-${REVIEW_ID}.txt
+rm -f "${diff_file}" ${scratch_dir}/weepcode-review-files-${REVIEW_ID}.txt
 
 # PR mode, successful post
 rm -f "${review_file}" "${diff_file}" "${pending_review_payload}" \
-      ${scratch_dir}/grok-review-prmeta-${REVIEW_ID}.json \
-      ${scratch_dir}/grok-review-files-${REVIEW_ID}.txt \
-      ${scratch_dir}/grok-review-post-${REVIEW_ID}.json \
-      ${scratch_dir}/grok-review-post-${REVIEW_ID}.err
+      ${scratch_dir}/weepcode-review-prmeta-${REVIEW_ID}.json \
+      ${scratch_dir}/weepcode-review-files-${REVIEW_ID}.txt \
+      ${scratch_dir}/weepcode-review-post-${REVIEW_ID}.json \
+      ${scratch_dir}/weepcode-review-post-${REVIEW_ID}.err
 
 # PR mode, failed post -- omit "${review_file}" from the rm command
 rm -f "${diff_file}" "${pending_review_payload}" \
-      ${scratch_dir}/grok-review-prmeta-${REVIEW_ID}.json \
-      ${scratch_dir}/grok-review-files-${REVIEW_ID}.txt \
-      ${scratch_dir}/grok-review-post-${REVIEW_ID}.json \
-      ${scratch_dir}/grok-review-post-${REVIEW_ID}.err
+      ${scratch_dir}/weepcode-review-prmeta-${REVIEW_ID}.json \
+      ${scratch_dir}/weepcode-review-files-${REVIEW_ID}.txt \
+      ${scratch_dir}/weepcode-review-post-${REVIEW_ID}.json \
+      ${scratch_dir}/weepcode-review-post-${REVIEW_ID}.err
 
 # PR mode, no reviewer output (zero-issue early-exit OR empty-diff exit)
 rm -f "${review_file}" "${diff_file}" "${pending_review_payload}" \
-      ${scratch_dir}/grok-review-prmeta-${REVIEW_ID}.json \
-      ${scratch_dir}/grok-review-files-${REVIEW_ID}.txt
+      ${scratch_dir}/weepcode-review-prmeta-${REVIEW_ID}.json \
+      ${scratch_dir}/weepcode-review-files-${REVIEW_ID}.txt
 ```
 
 ## Step 5: Final report
@@ -584,6 +609,6 @@ Give the user a brief status update after each phase:
 
 These are background notes that explain the rationale behind some of the choices above. They are NOT rules; they are pointers for future maintainers.
 
-- **No helper script.** The markdown parsing of `<review_file>` and the unified-diff hunk walk are well-defined and small enough to do directly in the orchestrator (using `read_file` to load the inputs and `write` to create the JSON payload). This follows the same self-contained pattern as `xai-pr-comments`. If a future maintainer finds the inline approach genuinely intractable -- e.g., the parser is consistently miscounting hunks across many real-world PRs -- a helper at `.grok/skills/review/scripts/build_pending_review.py` could be added with a clear justification. As of this writing, no such helper exists.
+- **No helper script.** The markdown parsing of `<review_file>` and the unified-diff hunk walk are well-defined and small enough to do directly in the orchestrator (using `read_file` to load the inputs and `write` to create the JSON payload). This keeps the workflow self-contained. If a future maintainer finds the inline approach genuinely intractable -- e.g., the parser is consistently miscounting hunks across many real-world PRs -- a helper at `.weepcode/skills/review/scripts/build_pending_review.py` could be added with a clear justification. As of this writing, no such helper exists.
 - **Owner/repo are derived from the PR `url`, not from a `baseRepository` field.** `gh pr view --json baseRepository` returns `Unknown JSON field: "baseRepository"` -- only `headRepository`, `headRepositoryOwner`, and `isCrossRepository` are exposed. Parsing the URL is the simplest universal approach and works correctly for cross-repo PRs.
 - **The constructed `/files` URL is used in user output, not the response's `html_url`.** The Files tab is where the "Finish your review" / "Submit review" button surfaces in the GitHub UI; that is what the user actually needs to interact with. The response's `html_url` deep-links to the review object and is less useful for this workflow.

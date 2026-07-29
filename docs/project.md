@@ -101,12 +101,17 @@ WeepCode 的产品内置 Skill 由 `weepcode-shell/src/builtin.rs` 管理：
 
 1. `SKILL.md` 使用 `include_str!`，二进制资源使用 `include_bytes!` 编译进唯一发布二进制。
 2. shell 初始化时，`extract_bundled_files` 把它们释放到 `~/.weepcode/skills/<name>/`。
-3. 版本变化时刷新全部受管文件；版本不变时只补写缺失的 `SKILL.md` 和嵌套资源。
+3. `~/.weepcode/.bundled_skill_manifest.json` 记录每个受管文件最后一次成功写入的 SHA-256；
+   启动时仅升级/修复哈希仍匹配或缺失的文件。用户修改、预先存在的同名 Skill 及其目录不会被覆盖，
+   对应 support files 也不会注入；inspect 仅把当前哈希仍匹配 manifest 的副本标为 bundled。
 4. 当前自动释放：`help`、`create-skill`、`create-workflow`、`code-review`、`review`、
    `design`、`pdf`、`imagine`、`check-work`。`best-of-n` 只编译供 headless 使用，不释放。
 
-`review`、`design`、`pdf` 直接来自本机 Grok 发行包。前两者的 persona TOML 作为共享
-support files 一同内置；`pdf` 的参考文档、脚本和二进制表单也完整进入单二进制。
+`review`、`design`、`pdf` 源自本机 Grok 发行包，并已按 WeepCode 工具契约适配。`review`
+的 reviewer 强制 read-only + foreground；branch/PR 模式先把目标 head 释放到 detached worktree，
+再把该路径作为 subagent cwd。`design` 的 writer/reviewer 分别限制为 read-write/read-only，且自动
+review/revise 最多三轮。Windows 上的 POSIX 命令统一通过 Git for Windows Bash 执行。
+前两者的 persona TOML 作为共享 support files 一同内置；`pdf` 的参考文档、脚本和二进制表单也完整进入单二进制。
 
 原版 Grok 还存在第二条动态 bundle 链路：认证后后台请求 `/v1/bundle/archive`，以一小时
 TTL 把扩展 persona、role、agent 和 skill 同步到 `~/.grok/bundled/`。该链路使用
